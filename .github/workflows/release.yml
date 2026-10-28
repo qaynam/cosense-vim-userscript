@@ -1,0 +1,43 @@
+name: Release
+
+# Push a tag like v0.31.0 → test, verify dist/ is up to date, create a GitHub Release
+# with dist/cosense-vim.user.js attached.
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+
+      - name: Tag must match package.json version
+        run: |
+          v="v$(node -p "require('./package.json').version")"
+          if [ "$v" != "$GITHUB_REF_NAME" ]; then
+            echo "::error::tag $GITHUB_REF_NAME does not match package.json ($v)"; exit 1
+          fi
+
+      - run: pnpm run check
+      - run: pnpm test
+
+      - name: Create release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          notes=$(awk -v t="## $GITHUB_REF_NAME" '$0 ~ "^## " { p = index($0, t) == 1; next } p' CHANGELOG.md)
+          gh release create "$GITHUB_REF_NAME" dist/cosense-vim.user.js \
+            --title "$GITHUB_REF_NAME" \
+            --notes "${notes:-See CHANGELOG.md}"

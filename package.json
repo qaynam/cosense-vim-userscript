@@ -1,0 +1,49 @@
+{
+  "name": "cosense-vim-userscript",
+  "version": "0.31.0",
+  "description": "Vim keybindings for Cosense (Scrapbox) as a userscript",
+  "private": true,
+  "type": "module",
+  "author": "qaynam",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/qaynam/cosense-vim-userscript.git"
+  },
+  "homepage": "https://github.com/qaynam/cosense-vim-userscript",
+  "scripts": {
+    "build": "node build.mjs",
+    "dev": "node build.mjs --watch",
+    "test": "node build.mjs && node --test \"test/*.test.js\"",
+    "check": "node build.mjs --check",
+    "version": "node build.mjs && git add dist"
+  },
+  "userscript": {
+    "name": "Cosense Vim Binding",
+    "namespace": "https://github.com/qaynam/cosense-vim-userscript",
+    "description": "Vim keybindings for Cosense (Scrapbox).  :help で使い方 / :settings で設定",
+    "match": [
+      "https://scrapbox.io/*"
+    ],
+    "icon": "https://www.google.com/s2/favicons?sz=64&domain=scrapbox.io",
+    "grant": "none",
+    "run-at": "document-idle",
+    "updateURL": "https://raw.githubusercontent.com/qaynam/cosense-vim-userscript/main/dist/cosense-vim.user.js",
+    "downloadURL": "https://raw.githubusercontent.com/qaynam/cosense-vim-userscript/main/dist/cosense-vim.user.js",
+    "supportURL": "https://github.com/qaynam/cosense-vim-userscript/issues"
+  },
+  "devDependencies": {
+    "esbuild": "^0.24.0",
+    "jsdom": "^24.1.0"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "devEngines": {
+    "packageManager": {
+      "name": "pnpm",
+      "version": "^11.1.1",
+      "onFail": "download"
+    }
+  }
+}
