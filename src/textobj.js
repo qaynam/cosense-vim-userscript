@@ -2,7 +2,7 @@
 // Cosense lines are single lines, so objects never span lines.
 import { lineChars } from './env.js';
 import { curLineIdx, cursorCol, hasSel, dk } from './dom.js';
-import { charClass, pressArrows } from './motions.js';
+import { charClass, moveToPos } from './motions.js';
 
 const PAIRS = {
   '(': ['(', ')'], ')': ['(', ')'], b: ['(', ')'],
@@ -84,7 +84,8 @@ export function selectTextObject(obj, count) {
   const chars = lineChars(curLineIdx());
   const r = textObjectIn(chars, cursorCol(), obj, count);
   if (!r) return false;
-  pressArrows(r.start - cursorCol(), false);
-  pressArrows(r.end - r.start, true);
+  const L = curLineIdx();
+  moveToPos({ L, c: r.start }, false);
+  moveToPos({ L, c: r.end }, true);
   return true;
 }

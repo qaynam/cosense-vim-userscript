@@ -2,7 +2,7 @@
 import { lineChars, lastLine } from './env.js';
 import {
   $, dk, dkRaw, edLines, edCurLine, lineCount, curLineIdx, cursorCol, jumpToLine, selectToLine,
-  findEmptyLine, contentLineToIdx, hasSel,
+  findEmptyLine, contentLineToIdx, hasSel, placeCursor, withRW,
 } from './dom.js';
 import { wait } from './util.js';
 
@@ -19,17 +19,65 @@ export const moveLineDown = () => dkRaw('ArrowDown', { altKey: true, code: 'Arro
 export const indentRight = () => dk('ArrowRight', { ctrlKey: true, code: 'ArrowRight', keyCode: 39 });
 export const indentLeft = () => dk('ArrowLeft', { ctrlKey: true, code: 'ArrowLeft', keyCode: 37 });
 
+// Up to FAST arrow presses are cheaper than a click; beyond that cosense's per-key
+// re-render dominates (~3.5 ms per key on a 128-line page, more on longer pages), so we click.
+const FAST = 6;
 export function pressArrows(delta, shift) {
+  if (!delta) return;
   const key = delta > 0 ? 'ArrowRight' : 'ArrowLeft';
   const n = Math.min(Math.abs(delta), 5000);
-  for (let i = 0; i < n; i++) dk(key, shift ? { shiftKey: true } : undefined);
+  const o = shift ? { shiftKey: true } : undefined;
+  withRW(() => { for (let i = 0; i < n; i++) dk(key, o); });   // one readOnly lift for the batch
+}
+// Move (or with select, extend the selection) to pos = {L, c}: one click + a small arrow
+// fix-up. If the click did not take effect synchronously we look again on the next frame
+// (never both click and arrow the full distance). Await motionSettled() before reading
+// the selection.
+let _settle = Promise.resolve(), _deferred = 0;
+export const motionSettled = () => _settle;
+const here = () => ({ L: curLineIdx(), c: cursorCol() });
+const same = (a, b) => a.L === b.L && a.c === b.c;
+function arrowTo(L, c, select) {
+  let d = arrowDelta(here(), { L, c });
+  if (Math.abs(d) > FAST && curLineIdx() === L) {
+    // on the right line but far off: jump to the nearer line end first (Cmd+←/→)
+    const n = lineChars(L).length;
+    if (c < Math.abs(d) && c <= n - c) dk('ArrowLeft', { metaKey: true, shiftKey: !!select });
+    else if (n - c < Math.abs(d)) dk('ArrowRight', { metaKey: true, shiftKey: !!select });
+    d = arrowDelta(here(), { L, c });
+  }
+  pressArrows(d, select);
+}
+export function moveToPos(pos, select) {
+  if (!_deferred) { const p = moveNow(pos, select); if (p) track(p); return; }
+  track(_settle.then(() => moveNow(pos, select)));        // keep motions in order
+}
+function track(p) {
+  _deferred++;
+  _settle = p.finally(() => { _deferred--; });
+}
+function moveNow(pos, select) {
+  const L = Math.max(0, Math.min(pos.L, lineCount() - 1));
+  const c = Math.max(0, Math.min(pos.c, lineChars(L).length));
+  const from = here();
+  if (same(from, { L, c })) return null;
+  if (Math.abs(arrowDelta(from, { L, c })) <= FAST || !placeCursor(L, c, select)) { arrowTo(L, c, select); return null; }
+  if (!same(here(), from)) { arrowTo(L, c, select); return null; }    // click applied: fix the column
+  return new Promise(res => requestAnimationFrame(() => {             // applied later, or ignored
+    try { arrowTo(L, c, select); } finally { res(); }
+  }));
 }
 // Move the cursor to (line, col). Collapses any selection first.
 export async function gotoPos(L, c) {
   if (hasSel()) dk('ArrowLeft');
-  if (curLineIdx() !== L) { jumpToLine(L); await wait(20); }
-  move0();
-  pressArrows(Math.min(c, lineChars(L).length), false);
+  moveToPos({ L, c }, false);
+  await _settle;
+}
+// j/k with a count: same column on the target line (vim keeps the column)
+export function lineJump(target, select) {
+  const col = cursorCol();
+  target = Math.max(0, Math.min(target, lineCount() - 1));
+  moveToPos({ L: target, c: Math.min(col, lineChars(target).length) }, select);
 }
 
 // ---- word motions ----
@@ -110,7 +158,8 @@ function wordTarget(kind, count, forOp) {
 }
 export function wordMotion(kind, count, select, forOp) {
   const { start, pos } = wordTarget(kind, count, forOp || select);
-  pressArrows(arrowDelta(start, pos), select);
+  if (pos.L === start.L && pos.c === start.c) return;
+  moveToPos(pos, select);
 }
 
 // ---- f / t / F / T and ; , ----
@@ -146,7 +195,7 @@ export function findTarget(kind, ch, count, inclusive) {
 export function findMotion(kind, ch, count, select) {
   const t = findTarget(kind, ch, count, select);
   if (t < 0) return false;
-  pressArrows(t - cursorCol(), select);
+  moveToPos({ L: curLineIdx(), c: t }, select);
   return true;
 }
 
@@ -180,7 +229,7 @@ export function doMotion(key, count, explicit, ch) {
   switch (key) {
     case 'G': if (explicit) jumpToLine(contentLineToIdx(count)); else moveGEnd(); return;
     case '{': case '}': { let i = curLineIdx(); for (let c = 0; c < count; c++) i = findEmptyLine(i, key === '{' ? -1 : 1); jumpToLine(i); return; }
-    case 'j': case 'k': if (count > 1) { jumpToLine(curLineIdx() + (key === 'j' ? count : -count)); return; } break;
+    case 'j': case 'k': if (count > 1) { lineJump(curLineIdx() + (key === 'j' ? count : -count), false); return; } break;
     case '0': case '^': move0(); return;
     case '$': move$(); return;
     case 'H': case 'M': case 'L': jumpToLine(screenLine(key, count)); return;
@@ -201,17 +250,19 @@ export function doSelMotion(key, count, ch) {
     case 'H': case 'M': case 'L': extendSelToLine(screenLine(key, count)); return;
     case '{': case '}': { let i = curLineIdx(); for (let c = 0; c < count; c++) i = findEmptyLine(i, key === '{' ? -1 : 1); extendSelToLine(i); return; }
   }
+  if ((key === 'j' || key === 'k') && count > 1) { lineJump(curLineIdx() + (key === 'j' ? count : -count), true); return; }
   const map = { h: 'ArrowLeft', j: 'ArrowDown', k: 'ArrowUp', l: 'ArrowRight' };
-  if (map[key]) for (let i = 0; i < count; i++) dk(map[key], { shiftKey: true });
+  if (map[key]) withRW(() => { for (let i = 0; i < count; i++) dk(map[key], { shiftKey: true }); });
 }
-// Shift+Arrow until the cursor line reaches target (robust against wrapped lines)
+// Extend the selection to line `target` (column kept): one shift-click, arrows as fallback
 export function extendSelToLine(target) {
   target = Math.max(0, Math.min(target, lineCount() - 1));
+  if (Math.abs(target - curLineIdx()) > 1) { lineJump(target, true); if (_deferred || curLineIdx() === target) return; }
   for (let round = 0; round < 10; round++) {
     const cur = curLineIdx(); const d = target - cur;
     if (!d) return;
     const key = d > 0 ? 'ArrowDown' : 'ArrowUp';
-    for (let i = 0, n = Math.min(Math.abs(d), 300); i < n; i++) dk(key, { shiftKey: true });
+    withRW(() => { for (let i = 0, n = Math.min(Math.abs(d), 300); i < n; i++) dk(key, { shiftKey: true }); });
     if (curLineIdx() === cur) return;   // no progress (document edge)
   }
 }

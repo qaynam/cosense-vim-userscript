@@ -71,6 +71,48 @@ export function clickLine(el, shift) {
   if (r.height && (r.bottom < 0 || r.top > window.innerHeight)) { el.scrollIntoView({ block: 'nearest' }); r = t.getBoundingClientRect(); }
   clickAt(t, r.left + 4, r.top + Math.min(r.height / 2, 10), shift);
 }
+// Put the cursor on (L, c) with one or two synthetic clicks (shift → extend the selection).
+// Cosense re-renders the editor on every key, so N arrow presses cost N renders; a click
+// is one. Measured on a 128-line page: 120 × Shift+↑ ≈ 440 ms, one shift-click ≈ 27 ms.
+// Returns false when nothing was clicked (no geometry); the caller verifies where it landed.
+function visibleSpan(el, L, c) {
+  // caret before char c, or after char n-1 at EOL. Link brackets etc. are zero-width while
+  // the line is not focused: fall back to the nearest visible char (caller fixes the column)
+  const n = lineChars(L).length;
+  const pick = i => el.querySelector(`.char-index[data-char-index="${i}"]`);
+  const visible = s => { if (!s) return false; const r = s.getBoundingClientRect(); return r.width > 0 && r.height > 0; };
+  const want = c >= n ? n - 1 : c;
+  for (let d = 0; d < n; d++) {
+    for (const i of d ? [want - d, want + d] : [want]) {
+      if (i >= 0 && i < n && visible(pick(i))) return { span: pick(i), after: i < c };
+    }
+  }
+  return null;
+}
+function clickSpan(el, hit, shift) {
+  const t = el.querySelector('.text') || el;
+  let r = hit.span.getBoundingClientRect();
+  if (r.bottom < 0 || r.top > window.innerHeight) { hit.span.scrollIntoView?.({ block: 'nearest' }); r = hit.span.getBoundingClientRect(); }
+  // left quarter of a char → caret before it; right quarter → caret after it
+  const x = hit.after ? r.right - Math.min(1, r.width / 4) : r.left + Math.min(1, r.width / 4);
+  clickAt(t, x, r.top + r.height / 2, shift);
+}
+export function placeCursor(L, c, shift) {
+  const el = edLines()[L]; if (!el) return false;
+  const lr = (el.querySelector('.text') || el).getBoundingClientRect();
+  if (!lr.width && !lr.height) return false;
+  const n = lineChars(L).length;
+  c = Math.max(0, Math.min(c, n));
+  if (!n || isEmptyLine(el)) { clickLine(el, shift); return true; }
+  let hit = visibleSpan(el, L, c);
+  if (!hit) {
+    // image / video / embed line: its chars only appear once the cursor is on it
+    clickLine(el, shift);
+    if (curLineIdx() !== L || !(hit = visibleSpan(el, L, c))) return true;
+  }
+  clickSpan(el, hit, shift);
+  return true;
+}
 export function jumpToLine(idx) { const ls = edLines(); if (ls.length) clickLine(ls[Math.max(0, Math.min(idx, ls.length - 1))], false); }
 export function selectToLine(idx) { const ls = edLines(); if (ls.length) clickLine(ls[Math.max(0, Math.min(idx, ls.length - 1))], true); }
 

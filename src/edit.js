@@ -7,10 +7,10 @@ import {
 } from './dom.js';
 import { setMode, vlRange, clearVL, updateVL } from './mode.js';
 import { flash, busy } from './ui.js';
-import { wait, swapCase } from './util.js';
+import { wait, swapCase, norm } from './util.js';
 import {
   move0, move$, moveJ, moveK, moveL, indentRight, indentLeft, extendSelToLine, doSelMotion,
-  wordMotion, findMotion, screenLine,
+  wordMotion, findMotion, screenLine, moveToPos, motionSettled,
 } from './motions.js';
 import { selectTextObject } from './textobj.js';
 
@@ -30,8 +30,8 @@ async function selectCharsFwd(count) {
   if (isEmptyLine(edCurLine())) return '';
   const room = Math.max(0, lineChars(curLineIdx()).length - cursorCol());
   const n = Math.min(count, room);
-  for (let i = 0; i < n; i++) dk('ArrowRight', { shiftKey: true });
-  await wait(10);
+  moveToPos({ L: curLineIdx(), c: cursorCol() + n }, true);
+  await motionSettled(); await wait(10);
   const sel = selText();
   if (sel.includes('\n')) { dk('ArrowLeft'); return ''; }   // safety net
   return sel;
@@ -84,15 +84,31 @@ export async function joinLines(count) {
   const times = Math.max(1, count - 1);
   const cursor = $('.cursor');
   const savedX = cursor ? cursor.getBoundingClientRect().left : null;
-  for (let i = 0; i < times; i++) {
-    if (curLineIdx() >= lineCount() - 1) break;
-    move$(); await wait(15);
-    killEOL(); await wait(20);
+  const L = curLineIdx(); const to = Math.min(L + times, lineCount() - 1);
+  if (to <= L) return;
+  // Ctrl+K at EOL joins raw (indent kept), so N joins == replacing "\n…\n…" with the
+  // concatenated lines: one selection + one insert instead of 2 renders per line
+  if (to - L >= 2 && !(await joinBySelection(L, to))) return;
+  if (to - L < 2) {
+    for (let i = L; i < to; i++) { move$(); killEOL(); }
   }
+  await wait(20);
   if (savedX !== null) {
     const cl = edCurLine();
     if (cl) { const t = cl.querySelector('.text') || cl; const r = t.getBoundingClientRect(); clickAt(t, savedX, r.top + Math.min(r.height / 2, 10)); }
   }
+}
+async function joinBySelection(L, to) {
+  const rest = readLineTexts(L + 1, to);
+  move$();
+  moveToPos({ L: to, c: lineChars(to).length }, true);
+  await motionSettled(); await wait(10);
+  if (norm(selText()) !== '\n' + rest.join('\n')) {          // unexpected selection: don't touch the text
+    if (hasSel()) dk('ArrowLeft');
+    flash('Join failed'); return false;
+  }
+  vimInsert(rest.join(''));
+  return true;
 }
 export async function openLine(below) {
   if (below) { move$(); await wait(15); dk('Enter'); }
@@ -130,7 +146,7 @@ async function selectLinesThrough(fr, to) {
     clickAt(el, r.left, r.top + 2, true);
   } else {
     dk('ArrowDown', { metaKey: true, shiftKey: true });
-    if (curLineIdx() !== last) extendSelToLine(last);
+    if (curLineIdx() !== last) { extendSelToLine(last); await motionSettled(); }
     dk('ArrowRight', { metaKey: true, shiftKey: true });
   }
   await wait(30);
@@ -145,7 +161,7 @@ async function selectLinesInner(fr, to) {
     const el = ls[to].querySelector('.text') || ls[to];
     const r = el.getBoundingClientRect();
     clickAt(el, r.right - 2, r.bottom - 4, true);
-  } else if (to > fr) extendSelToLine(to);
+  } else if (to > fr) { extendSelToLine(to); await motionSettled(); }
   dk('ArrowRight', { metaKey: true, shiftKey: true });
   await wait(30);
   return hasSel();
@@ -218,6 +234,7 @@ export async function execOp(op, mot, count, explicit, extra) {
     else if ('fFtT;,'.includes(mot)) { if (!findMotion(mot, extra, count, true)) return; }
     else doSelMotion(mot, count);
   }
+  await motionSettled();
   await wait(20);
   const sel = selText();
   if (!sel) { if (op === 'c') setMode('insert'); return; }   // empty motion: never Backspace blindly

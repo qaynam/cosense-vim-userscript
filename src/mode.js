@@ -27,9 +27,15 @@ export function resetBuf() { state.cmdBuf = ''; state.pending = null; updateIndi
 export function setPending(type, count, kind) { state.pending = { type, count: count || 1, kind }; updateIndicator(); }
 
 export function vlRange() { const cur = curLineIdx(); return [Math.min(state.vlStart, cur), Math.max(state.vlStart, cur)]; }
+// Only touch lines whose state changes: re-adding the class to the whole range on every
+// j/k was O(range) DOM writes (and style recalcs) per key. Reads are cheap; cosense may
+// re-render a line and drop our class, so every line is checked, but only diffs are written.
 export function updateVL() {
-  clearVL(); if (state.mode !== 'visual-line') return;
+  if (state.mode !== 'visual-line') { clearVL(); return; }
   const [fr, to] = vlRange(); const all = edLines();
-  for (let i = fr; i <= to; i++) all[i]?.classList.add('vim-vl-sel');
+  for (let i = 0; i < all.length; i++) {
+    const on = i >= fr && i <= to; const cl = all[i].classList;
+    if (cl.contains('vim-vl-sel') !== on) cl.toggle('vim-vl-sel', on);
+  }
 }
 export function clearVL() { document.querySelectorAll('.vim-vl-sel').forEach(e => e.classList.remove('vim-vl-sel')); }

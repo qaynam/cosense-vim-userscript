@@ -59,26 +59,53 @@ export function busy(msg) {
 }
 
 // ---- line numbers ----
-let _lnRaf = 0, _lnObs = null, _lastCI = -2, _lastLen = -1, _lnForce = true;
+// Absolute numbers change only when lines are added / removed. Relative numbers change on
+// every cursor move, so only the lines on screen (plus a margin) are rewritten — on a long
+// page that is ~60 attribute writes per move instead of one per line. Lines scrolled into
+// view are refreshed from the scroll listener before they are painted.
+const LN_MARGIN = 40;
+let _lnRaf = 0, _lnObs = null, _lastCI = -2, _lastLen = -1, _lnForce = true, _win = [0, -1];
 export function schedLN() { if (!rt.active || _lnRaf) return; _lnRaf = requestAnimationFrame(doLN); }
 export function forceLN() { _lnForce = true; _lastCI = -2; _lastLen = -1; schedLN(); }
+// first line whose bottom is below y (lines are laid out top to bottom)
+function firstBelow(lines, y) {
+  let lo = 0, hi = lines.length - 1, ans = lines.length;
+  while (lo <= hi) {
+    const mid = (lo + hi) >> 1;
+    if (lines[mid].getBoundingClientRect().bottom > y) { ans = mid; hi = mid - 1; } else lo = mid + 1;
+  }
+  return ans;
+}
+export function visibleWindow(lines, margin = 0) {
+  const len = lines.length; if (!len) return [0, -1];
+  const a = firstBelow(lines, 0), b = firstBelow(lines, window.innerHeight);
+  return [Math.max(0, a - margin), Math.min(len - 1, b + margin)];
+}
 function doLN() {
   _lnRaf = 0;
   if (!rt.active || !cfg.lineNumbers) return;
   const lines = edLines(); const len = lines.length; if (!len) return;
   let ci = -1;
-  for (let i = 0; i < len; i++) if (lines[i].classList.contains('cursor-line')) { ci = i; break; }
+  const cur = document.querySelector('.editor .lines > .line.cursor-line');
+  if (cur) ci = Array.prototype.indexOf.call(lines, cur);
   const rel = cfg.relativeNumber;
-  if (!_lnForce && len === _lastLen && (!rel || ci === _lastCI)) return;
-  _lnForce = false; _lastCI = ci; _lastLen = len;
-  let n = 0;
-  for (let i = 0; i < len; i++) {
-    const el = lines[i]; let v;
-    if (el.classList.contains('line-title')) v = '';
-    else { n++; v = (rel && ci >= 0 && i !== ci) ? String(Math.abs(i - ci)) : String(n); }
-    if (el.getAttribute('data-vim-ln') !== v) el.setAttribute('data-vim-ln', v);
+  const titleOff = lines[0].classList.contains('line-title') ? 1 : 0;
+  const value = i => (i < titleOff ? '' : (rel && ci >= 0 && i !== ci) ? String(Math.abs(i - ci)) : String(i + 1 - titleOff));
+  const set = i => { const v = value(i); if (lines[i].getAttribute('data-vim-ln') !== v) lines[i].setAttribute('data-vim-ln', v); };
+  const changed = _lnForce || len !== _lastLen;
+  if (!rel) {
+    if (!changed) return;
+    for (let i = 0; i < len; i++) set(i);
+  } else {
+    const vis = visibleWindow(lines, 0);
+    const covered = vis[0] >= _win[0] && vis[1] <= _win[1];
+    if (!changed && ci === _lastCI && covered) return;
+    _win = visibleWindow(lines, LN_MARGIN);
+    for (let i = _win[0]; i <= _win[1]; i++) set(i);
   }
+  _lnForce = false; _lastCI = ci; _lastLen = len;
 }
+const onLNScroll = () => schedLN();
 export function setupLNObs() {
   stopLNObs();
   const c = $('.editor .lines'); if (!c || !rt.active) return;
@@ -88,7 +115,11 @@ export function setupLNObs() {
     schedLN();
   });
   _lnObs.observe(c, { attributes: true, attributeFilter: ['class'], childList: true, subtree: true });
+  window.addEventListener('scroll', onLNScroll, { passive: true });
   forceLN();
 }
-export function stopLNObs() { if (_lnObs) { _lnObs.disconnect(); _lnObs = null; } }
+export function stopLNObs() {
+  if (_lnObs) { _lnObs.disconnect(); _lnObs = null; }
+  window.removeEventListener('scroll', onLNScroll);
+}
 export function clearLineNumbers() { document.querySelectorAll('[data-vim-ln]').forEach(el => el.removeAttribute('data-vim-ln')); }

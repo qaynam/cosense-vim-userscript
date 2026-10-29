@@ -319,6 +319,51 @@
     }
     clickAt(t, r.left + 4, r.top + Math.min(r.height / 2, 10), shift);
   }
+  function visibleSpan(el, L, c) {
+    const n = lineChars(L).length;
+    const pick = (i) => el.querySelector(`.char-index[data-char-index="${i}"]`);
+    const visible = (s) => {
+      if (!s) return false;
+      const r = s.getBoundingClientRect();
+      return r.width > 0 && r.height > 0;
+    };
+    const want = c >= n ? n - 1 : c;
+    for (let d = 0; d < n; d++) {
+      for (const i of d ? [want - d, want + d] : [want]) {
+        if (i >= 0 && i < n && visible(pick(i))) return { span: pick(i), after: i < c };
+      }
+    }
+    return null;
+  }
+  function clickSpan(el, hit, shift) {
+    const t = el.querySelector(".text") || el;
+    let r = hit.span.getBoundingClientRect();
+    if (r.bottom < 0 || r.top > window.innerHeight) {
+      hit.span.scrollIntoView?.({ block: "nearest" });
+      r = hit.span.getBoundingClientRect();
+    }
+    const x = hit.after ? r.right - Math.min(1, r.width / 4) : r.left + Math.min(1, r.width / 4);
+    clickAt(t, x, r.top + r.height / 2, shift);
+  }
+  function placeCursor(L, c, shift) {
+    const el = edLines()[L];
+    if (!el) return false;
+    const lr = (el.querySelector(".text") || el).getBoundingClientRect();
+    if (!lr.width && !lr.height) return false;
+    const n = lineChars(L).length;
+    c = Math.max(0, Math.min(c, n));
+    if (!n || isEmptyLine(el)) {
+      clickLine(el, shift);
+      return true;
+    }
+    let hit = visibleSpan(el, L, c);
+    if (!hit) {
+      clickLine(el, shift);
+      if (curLineIdx() !== L || !(hit = visibleSpan(el, L, c))) return true;
+    }
+    clickSpan(el, hit, shift);
+    return true;
+  }
   function jumpToLine(idx) {
     const ls = edLines();
     if (ls.length) clickLine(ls[Math.max(0, Math.min(idx, ls.length - 1))], false);
@@ -681,11 +726,13 @@ body[data-vim-numbers] .app:not(.presentation) .editor .lines>.line.cursor-line:
     f.textContent = "⏳ " + msg;
     f.classList.add("vim-fv");
   }
+  var LN_MARGIN = 40;
   var _lnRaf = 0;
   var _lnObs = null;
   var _lastCI = -2;
   var _lastLen = -1;
   var _lnForce = true;
+  var _win = [0, -1];
   function schedLN() {
     if (!rt.active || _lnRaf) return;
     _lnRaf = requestAnimationFrame(doLN);
@@ -696,6 +743,23 @@ body[data-vim-numbers] .app:not(.presentation) .editor .lines>.line.cursor-line:
     _lastLen = -1;
     schedLN();
   }
+  function firstBelow(lines, y) {
+    let lo = 0, hi = lines.length - 1, ans = lines.length;
+    while (lo <= hi) {
+      const mid = lo + hi >> 1;
+      if (lines[mid].getBoundingClientRect().bottom > y) {
+        ans = mid;
+        hi = mid - 1;
+      } else lo = mid + 1;
+    }
+    return ans;
+  }
+  function visibleWindow(lines, margin = 0) {
+    const len = lines.length;
+    if (!len) return [0, -1];
+    const a = firstBelow(lines, 0), b = firstBelow(lines, window.innerHeight);
+    return [Math.max(0, a - margin), Math.min(len - 1, b + margin)];
+  }
   function doLN() {
     _lnRaf = 0;
     if (!rt.active || !cfg.lineNumbers) return;
@@ -703,27 +767,31 @@ body[data-vim-numbers] .app:not(.presentation) .editor .lines>.line.cursor-line:
     const len = lines.length;
     if (!len) return;
     let ci = -1;
-    for (let i = 0; i < len; i++) if (lines[i].classList.contains("cursor-line")) {
-      ci = i;
-      break;
-    }
+    const cur = document.querySelector(".editor .lines > .line.cursor-line");
+    if (cur) ci = Array.prototype.indexOf.call(lines, cur);
     const rel = cfg.relativeNumber;
-    if (!_lnForce && len === _lastLen && (!rel || ci === _lastCI)) return;
+    const titleOff = lines[0].classList.contains("line-title") ? 1 : 0;
+    const value = (i) => i < titleOff ? "" : rel && ci >= 0 && i !== ci ? String(Math.abs(i - ci)) : String(i + 1 - titleOff);
+    const set = (i) => {
+      const v = value(i);
+      if (lines[i].getAttribute("data-vim-ln") !== v) lines[i].setAttribute("data-vim-ln", v);
+    };
+    const changed = _lnForce || len !== _lastLen;
+    if (!rel) {
+      if (!changed) return;
+      for (let i = 0; i < len; i++) set(i);
+    } else {
+      const vis = visibleWindow(lines, 0);
+      const covered = vis[0] >= _win[0] && vis[1] <= _win[1];
+      if (!changed && ci === _lastCI && covered) return;
+      _win = visibleWindow(lines, LN_MARGIN);
+      for (let i = _win[0]; i <= _win[1]; i++) set(i);
+    }
     _lnForce = false;
     _lastCI = ci;
     _lastLen = len;
-    let n = 0;
-    for (let i = 0; i < len; i++) {
-      const el = lines[i];
-      let v;
-      if (el.classList.contains("line-title")) v = "";
-      else {
-        n++;
-        v = rel && ci >= 0 && i !== ci ? String(Math.abs(i - ci)) : String(n);
-      }
-      if (el.getAttribute("data-vim-ln") !== v) el.setAttribute("data-vim-ln", v);
-    }
   }
+  var onLNScroll = () => schedLN();
   function setupLNObs() {
     stopLNObs();
     const c = $(".editor .lines");
@@ -736,6 +804,7 @@ body[data-vim-numbers] .app:not(.presentation) .editor .lines>.line.cursor-line:
       schedLN();
     });
     _lnObs.observe(c, { attributes: true, attributeFilter: ["class"], childList: true, subtree: true });
+    window.addEventListener("scroll", onLNScroll, { passive: true });
     forceLN();
   }
   function stopLNObs() {
@@ -743,6 +812,7 @@ body[data-vim-numbers] .app:not(.presentation) .editor .lines>.line.cursor-line:
       _lnObs.disconnect();
       _lnObs = null;
     }
+    window.removeEventListener("scroll", onLNScroll);
   }
   function clearLineNumbers() {
     document.querySelectorAll("[data-vim-ln]").forEach((el) => el.removeAttribute("data-vim-ln"));
@@ -976,19 +1046,75 @@ body[data-vim-numbers] .app:not(.presentation) .editor .lines>.line.cursor-line:
   var moveLineDown = () => dkRaw("ArrowDown", { altKey: true, code: "ArrowDown", keyCode: 40 });
   var indentRight = () => dk("ArrowRight", { ctrlKey: true, code: "ArrowRight", keyCode: 39 });
   var indentLeft = () => dk("ArrowLeft", { ctrlKey: true, code: "ArrowLeft", keyCode: 37 });
+  var FAST = 6;
   function pressArrows(delta, shift) {
+    if (!delta) return;
     const key = delta > 0 ? "ArrowRight" : "ArrowLeft";
     const n = Math.min(Math.abs(delta), 5e3);
-    for (let i = 0; i < n; i++) dk(key, shift ? { shiftKey: true } : void 0);
+    const o = shift ? { shiftKey: true } : void 0;
+    withRW(() => {
+      for (let i = 0; i < n; i++) dk(key, o);
+    });
+  }
+  var _settle = Promise.resolve();
+  var _deferred = 0;
+  var motionSettled = () => _settle;
+  var here = () => ({ L: curLineIdx(), c: cursorCol() });
+  var same = (a, b) => a.L === b.L && a.c === b.c;
+  function arrowTo(L, c, select) {
+    let d = arrowDelta(here(), { L, c });
+    if (Math.abs(d) > FAST && curLineIdx() === L) {
+      const n = lineChars(L).length;
+      if (c < Math.abs(d) && c <= n - c) dk("ArrowLeft", { metaKey: true, shiftKey: !!select });
+      else if (n - c < Math.abs(d)) dk("ArrowRight", { metaKey: true, shiftKey: !!select });
+      d = arrowDelta(here(), { L, c });
+    }
+    pressArrows(d, select);
+  }
+  function moveToPos(pos, select) {
+    if (!_deferred) {
+      const p = moveNow(pos, select);
+      if (p) track(p);
+      return;
+    }
+    track(_settle.then(() => moveNow(pos, select)));
+  }
+  function track(p) {
+    _deferred++;
+    _settle = p.finally(() => {
+      _deferred--;
+    });
+  }
+  function moveNow(pos, select) {
+    const L = Math.max(0, Math.min(pos.L, lineCount() - 1));
+    const c = Math.max(0, Math.min(pos.c, lineChars(L).length));
+    const from = here();
+    if (same(from, { L, c })) return null;
+    if (Math.abs(arrowDelta(from, { L, c })) <= FAST || !placeCursor(L, c, select)) {
+      arrowTo(L, c, select);
+      return null;
+    }
+    if (!same(here(), from)) {
+      arrowTo(L, c, select);
+      return null;
+    }
+    return new Promise((res) => requestAnimationFrame(() => {
+      try {
+        arrowTo(L, c, select);
+      } finally {
+        res();
+      }
+    }));
   }
   async function gotoPos(L, c) {
     if (hasSel()) dk("ArrowLeft");
-    if (curLineIdx() !== L) {
-      jumpToLine(L);
-      await wait(20);
-    }
-    move0();
-    pressArrows(Math.min(c, lineChars(L).length), false);
+    moveToPos({ L, c }, false);
+    await _settle;
+  }
+  function lineJump(target, select) {
+    const col = cursorCol();
+    target = Math.max(0, Math.min(target, lineCount() - 1));
+    moveToPos({ L: target, c: Math.min(col, lineChars(target).length) }, select);
   }
   function charClass(ch, big) {
     if (ch === void 0) return -1;
@@ -1078,7 +1204,8 @@ body[data-vim-numbers] .app:not(.presentation) .editor .lines>.line.cursor-line:
   }
   function wordMotion(kind, count, select, forOp) {
     const { start, pos } = wordTarget(kind, count, forOp || select);
-    pressArrows(arrowDelta(start, pos), select);
+    if (pos.L === start.L && pos.c === start.c) return;
+    moveToPos(pos, select);
   }
   var lastFind = { kind: "", ch: "" };
   var INVERT = { f: "F", F: "f", t: "T", T: "t" };
@@ -1117,7 +1244,7 @@ body[data-vim-numbers] .app:not(.presentation) .editor .lines>.line.cursor-line:
   function findMotion(kind, ch, count, select) {
     const t = findTarget(kind, ch, count, select);
     if (t < 0) return false;
-    pressArrows(t - cursorCol(), select);
+    moveToPos({ L: curLineIdx(), c: t }, select);
     return true;
   }
   function headerBottom() {
@@ -1161,7 +1288,7 @@ body[data-vim-numbers] .app:not(.presentation) .editor .lines>.line.cursor-line:
       case "j":
       case "k":
         if (count > 1) {
-          jumpToLine(curLineIdx() + (key === "j" ? count : -count));
+          lineJump(curLineIdx() + (key === "j" ? count : -count), false);
           return;
         }
         break;
@@ -1249,17 +1376,29 @@ body[data-vim-numbers] .app:not(.presentation) .editor .lines>.line.cursor-line:
         return;
       }
     }
+    if ((key === "j" || key === "k") && count > 1) {
+      lineJump(curLineIdx() + (key === "j" ? count : -count), true);
+      return;
+    }
     const map = { h: "ArrowLeft", j: "ArrowDown", k: "ArrowUp", l: "ArrowRight" };
-    if (map[key]) for (let i = 0; i < count; i++) dk(map[key], { shiftKey: true });
+    if (map[key]) withRW(() => {
+      for (let i = 0; i < count; i++) dk(map[key], { shiftKey: true });
+    });
   }
   function extendSelToLine(target) {
     target = Math.max(0, Math.min(target, lineCount() - 1));
+    if (Math.abs(target - curLineIdx()) > 1) {
+      lineJump(target, true);
+      if (_deferred || curLineIdx() === target) return;
+    }
     for (let round = 0; round < 10; round++) {
       const cur = curLineIdx();
       const d = target - cur;
       if (!d) return;
       const key = d > 0 ? "ArrowDown" : "ArrowUp";
-      for (let i = 0, n = Math.min(Math.abs(d), 300); i < n; i++) dk(key, { shiftKey: true });
+      withRW(() => {
+        for (let i = 0, n = Math.min(Math.abs(d), 300); i < n; i++) dk(key, { shiftKey: true });
+      });
       if (curLineIdx() === cur) return;
     }
   }
@@ -1424,8 +1563,9 @@ body[data-vim-numbers] .app:not(.presentation) .editor .lines>.line.cursor-line:
     const chars = lineChars(curLineIdx());
     const r = textObjectIn(chars, cursorCol(), obj, count);
     if (!r) return false;
-    pressArrows(r.start - cursorCol(), false);
-    pressArrows(r.end - r.start, true);
+    const L = curLineIdx();
+    moveToPos({ L, c: r.start }, false);
+    moveToPos({ L, c: r.end }, true);
     return true;
   }
 
@@ -1446,7 +1586,8 @@ body[data-vim-numbers] .app:not(.presentation) .editor .lines>.line.cursor-line:
     if (isEmptyLine(edCurLine())) return "";
     const room = Math.max(0, lineChars(curLineIdx()).length - cursorCol());
     const n = Math.min(count, room);
-    for (let i = 0; i < n; i++) dk("ArrowRight", { shiftKey: true });
+    moveToPos({ L: curLineIdx(), c: cursorCol() + n }, true);
+    await motionSettled();
     await wait(10);
     const sel = selText();
     if (sel.includes("\n")) {
@@ -1516,13 +1657,17 @@ body[data-vim-numbers] .app:not(.presentation) .editor .lines>.line.cursor-line:
     const times = Math.max(1, count - 1);
     const cursor = $(".cursor");
     const savedX = cursor ? cursor.getBoundingClientRect().left : null;
-    for (let i = 0; i < times; i++) {
-      if (curLineIdx() >= lineCount() - 1) break;
-      move$();
-      await wait(15);
-      killEOL();
-      await wait(20);
+    const L = curLineIdx();
+    const to = Math.min(L + times, lineCount() - 1);
+    if (to <= L) return;
+    if (to - L >= 2 && !await joinBySelection(L, to)) return;
+    if (to - L < 2) {
+      for (let i = L; i < to; i++) {
+        move$();
+        killEOL();
+      }
     }
+    await wait(20);
     if (savedX !== null) {
       const cl = edCurLine();
       if (cl) {
@@ -1531,6 +1676,20 @@ body[data-vim-numbers] .app:not(.presentation) .editor .lines>.line.cursor-line:
         clickAt(t, savedX, r.top + Math.min(r.height / 2, 10));
       }
     }
+  }
+  async function joinBySelection(L, to) {
+    const rest = readLineTexts(L + 1, to);
+    move$();
+    moveToPos({ L: to, c: lineChars(to).length }, true);
+    await motionSettled();
+    await wait(10);
+    if (norm(selText()) !== "\n" + rest.join("\n")) {
+      if (hasSel()) dk("ArrowLeft");
+      flash("Join failed");
+      return false;
+    }
+    vimInsert(rest.join(""));
+    return true;
   }
   async function openLine(below) {
     if (below) {
@@ -1590,7 +1749,10 @@ body[data-vim-numbers] .app:not(.presentation) .editor .lines>.line.cursor-line:
       clickAt(el, r.left, r.top + 2, true);
     } else {
       dk("ArrowDown", { metaKey: true, shiftKey: true });
-      if (curLineIdx() !== last2) extendSelToLine(last2);
+      if (curLineIdx() !== last2) {
+        extendSelToLine(last2);
+        await motionSettled();
+      }
       dk("ArrowRight", { metaKey: true, shiftKey: true });
     }
     await wait(30);
@@ -1606,7 +1768,10 @@ body[data-vim-numbers] .app:not(.presentation) .editor .lines>.line.cursor-line:
       const el = ls[to].querySelector(".text") || ls[to];
       const r = el.getBoundingClientRect();
       clickAt(el, r.right - 2, r.bottom - 4, true);
-    } else if (to > fr) extendSelToLine(to);
+    } else if (to > fr) {
+      extendSelToLine(to);
+      await motionSettled();
+    }
     dk("ArrowRight", { metaKey: true, shiftKey: true });
     await wait(30);
     return hasSel();
@@ -1724,6 +1889,7 @@ body[data-vim-numbers] .app:not(.presentation) .editor .lines>.line.cursor-line:
         if (!findMotion(mot, extra, count, true)) return;
       } else doSelMotion(mot, count);
     }
+    await motionSettled();
     await wait(20);
     const sel = selText();
     if (!sel) {
@@ -3720,11 +3886,17 @@ ${vars}
     return [Math.min(state.vlStart, cur), Math.max(state.vlStart, cur)];
   }
   function updateVL() {
-    clearVL();
-    if (state.mode !== "visual-line") return;
+    if (state.mode !== "visual-line") {
+      clearVL();
+      return;
+    }
     const [fr, to] = vlRange();
     const all = edLines();
-    for (let i = fr; i <= to; i++) all[i]?.classList.add("vim-vl-sel");
+    for (let i = 0; i < all.length; i++) {
+      const on = i >= fr && i <= to;
+      const cl = all[i].classList;
+      if (cl.contains("vim-vl-sel") !== on) cl.toggle("vim-vl-sel", on);
+    }
   }
   function clearVL() {
     document.querySelectorAll(".vim-vl-sel").forEach((e) => e.classList.remove("vim-vl-sel"));

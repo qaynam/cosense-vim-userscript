@@ -65,13 +65,16 @@ CI は `dist/` が古いままだと失敗します。
 
 ## リリース
 
-1. `CHANGELOG.md` に `## v0.32.0` のような見出しで変更点を書く
-2. `npm version minor`（または `patch`）を実行する
+1. `CHANGELOG.md` に `## v0.32.0` のような見出しで変更点を書いてコミットする
+2. `pnpm release minor`（または `patch` / `major` / `0.32.0`）を実行する
    - `package.json` のバージョンが上がり、`dist/` が作り直されて、コミットとタグ `v0.32.0` ができます
+   - `CHANGELOG.md` に該当バージョンの節がないと止まります
 3. `git push --follow-tags`
 
 タグが push されると GitHub Actions がテストを回し、`dist/cosense-vim.user.js` を添付したリリースを作ります。
 リリースノートには `CHANGELOG.md` の該当バージョンの節が入ります。
+
+`npm version` は使えません（`package.json` の `devEngines` で pnpm を指定しているため、npm が実行を拒否します）。
 
 ## ライセンス
 
