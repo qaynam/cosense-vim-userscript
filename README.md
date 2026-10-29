@@ -21,6 +21,8 @@ Tampermonkey を入れた状態で次の URL を開くと、インストール�
 https://raw.githubusercontent.com/qaynam/cosense-vim-userscript/main/dist/cosense-vim.user.js
 ```
 
+[Install to Tampermonkey](https://github.com/qaynam/cosense-vim-userscript/raw/refs/heads/main/dist/cosense-vim.user.js)
+
 ### コピペ
 
 [`dist/cosense-vim.user.js`](dist/cosense-vim.user.js) の中身を丸ごとコピーして、Tampermonkey の新規スクリプトに貼り付けます。
@@ -30,12 +32,12 @@ https://raw.githubusercontent.com/qaynam/cosense-vim-userscript/main/dist/cosens
 
 Cosense のページを開くと、画面下にモード表示が出ます。
 
-| やりたいこと | 操作 |
-| --- | --- |
-| ヘルプを見る | `:help`（`:h dd` のようにキーやコマンドで引ける） |
-| 設定を開く | `:settings`、または URL に `#vim-settings` を付ける |
+| やりたいこと                   | 操作                                                       |
+| ------------------------------ | ---------------------------------------------------------- |
+| ヘルプを見る                   | `:help`（`:h dd` のようにキーやコマンドで引ける）          |
+| 設定を開く                     | `:settings`、または URL に `#vim-settings` を付ける        |
 | このプロジェクトだけ無効にする | 設定画面で「このプロジェクト」を選び、有効のチェックを外す |
-| キーマップを足す | 設定画面のキーマップ欄に `inoremap jk <Esc>` のように書く |
+| キーマップを足す               | 設定画面のキーマップ欄に `inoremap jk <Esc>` のように書く  |
 
 ## 開発
 
