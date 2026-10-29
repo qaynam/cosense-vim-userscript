@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Cosense Vim Binding
 // @namespace    https://github.com/qaynam/cosense-vim-userscript
-// @version      0.31.0
+// @version      0.32.0
 // @description  Vim keybindings for Cosense (Scrapbox).  :help で使い方 / :settings で設定
 // @author       qaynam
 // @license      MIT
@@ -19,7 +19,7 @@
 
 (() => {
   // src/util.js
-  var VERSION = "v" + (true ? "0.31.0" : "dev");
+  var VERSION = "v" + (true ? "0.32.0" : "dev");
   var LOG = "[cosense-vim]";
   var wait = (ms) => new Promise((r) => setTimeout(r, ms));
   var kebab = (k) => k.replace(/[A-Z]/g, (m) => "-" + m.toLowerCase());

@@ -1,6 +1,6 @@
 {
   "name": "cosense-vim-userscript",
-  "version": "0.31.0",
+  "version": "0.32.0",
   "description": "Vim keybindings for Cosense (Scrapbox) as a userscript",
   "private": true,
   "type": "module",
