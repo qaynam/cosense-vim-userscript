@@ -1,7 +1,7 @@
 // gd / CTRL-O / CTRL-I
 import { rt } from './state.js';
 import { layout, showPage } from './env.js';
-import { $, edCurLine, edLines, focused, focus, curLineIdx, lineCount, jumpToLine, resetTextareaCache } from './dom.js';
+import { $, edCurLine, edLines, focused, focus, curLineIdx, lineCount, jumpToLine, resetTextareaCache, cursorEl } from './dom.js';
 import { setMode } from './mode.js';
 import { flash, schedLN } from './ui.js';
 import { bindTextarea } from './textarea.js';
@@ -81,7 +81,7 @@ function previewImageFor(el) {
 }
 
 export function followLink() {
-  const cl = edCurLine(); const cursor = $('.cursor');
+  const cl = edCurLine(); const cursor = cursorEl();
   if (!cl || !cursor) { flash('No link'); return; }
   const cr = cursor.getBoundingClientRect();
   const cx = cr.left + cr.width / 2, cy = cr.top + cr.height / 2;

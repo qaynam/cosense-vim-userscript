@@ -1,7 +1,7 @@
 // Mode indicator, flash messages, line numbers.
 import { state, rt } from './state.js';
 import { cfg } from './settings.js';
-import { $, edLines } from './dom.js';
+import { $, edLines, edCurLine } from './dom.js';
 import { ensureStyles } from './theme.js';
 
 // ---- indicator ----
@@ -59,12 +59,15 @@ export function busy(msg) {
 }
 
 // ---- line numbers ----
-// Absolute numbers change only when lines are added / removed. Relative numbers change on
-// every cursor move, so only the lines on screen (plus a margin) are rewritten — on a long
-// page that is ~60 attribute writes per move instead of one per line. Lines scrolled into
-// view are refreshed from the scroll listener before they are painted.
-const LN_MARGIN = 40;
-let _lnRaf = 0, _lnObs = null, _lastCI = -2, _lastLen = -1, _lnForce = true, _win = [0, -1];
+// Numbers are a ::before showing the line's data-vim-ln, and only the lines on screen (plus
+// a margin) carry the attribute. Measured on a 1600-line page: a ::before on every line —
+// or a CSS counter — makes cosense's own layout on each key ~5 ms slower; with ~60 numbered
+// lines the cost is gone. Lines scrolled into view are numbered from the scroll listener.
+// Relative numbers change on every move; while j/k repeats they are refreshed once the
+// cursor rests (REL_IDLE ms) instead of on every key.
+const LN_MARGIN = 15, REL_IDLE = 90;
+let _lnRaf = 0, _lnTimer = 0, _lnObs = null, _lastCI = -2, _lastLen = -1, _lnForce = true, _win = [0, -1];
+let _lastMove = 0, _written = new Set(), _lastRel = null;
 export function schedLN() { if (!rt.active || _lnRaf) return; _lnRaf = requestAnimationFrame(doLN); }
 export function forceLN() { _lnForce = true; _lastCI = -2; _lastLen = -1; schedLN(); }
 // first line whose bottom is below y (lines are laid out top to bottom)
@@ -85,25 +88,33 @@ function doLN() {
   _lnRaf = 0;
   if (!rt.active || !cfg.lineNumbers) return;
   const lines = edLines(); const len = lines.length; if (!len) return;
-  let ci = -1;
-  const cur = document.querySelector('.editor .lines > .line.cursor-line');
-  if (cur) ci = Array.prototype.indexOf.call(lines, cur);
   const rel = cfg.relativeNumber;
-  const titleOff = lines[0].classList.contains('line-title') ? 1 : 0;
-  const value = i => (i < titleOff ? '' : (rel && ci >= 0 && i !== ci) ? String(Math.abs(i - ci)) : String(i + 1 - titleOff));
-  const set = i => { const v = value(i); if (lines[i].getAttribute('data-vim-ln') !== v) lines[i].setAttribute('data-vim-ln', v); };
-  const changed = _lnForce || len !== _lastLen;
-  if (!rel) {
-    if (!changed) return;
-    for (let i = 0; i < len; i++) set(i);
-  } else {
-    const vis = visibleWindow(lines, 0);
-    const covered = vis[0] >= _win[0] && vis[1] <= _win[1];
-    if (!changed && ci === _lastCI && covered) return;
-    _win = visibleWindow(lines, LN_MARGIN);
-    for (let i = _win[0]; i <= _win[1]; i++) set(i);
+  const cur = edCurLine();
+  const ci = cur ? Array.prototype.indexOf.call(lines, cur) : -1;
+  const moved = rel && ci !== _lastCI;
+  const now = performance.now();
+  if (moved && !_lnForce && rel === _lastRel && now - _lastMove < REL_IDLE * 0.8) {
+    // still moving: refresh when the cursor has rested
+    _lastMove = now;
+    clearTimeout(_lnTimer); _lnTimer = setTimeout(schedLN, REL_IDLE);
+    return;
   }
-  _lnForce = false; _lastCI = ci; _lastLen = len;
+  if (moved) _lastMove = now;
+  const vis = visibleWindow(lines, 0);
+  const covered = vis[0] >= _win[0] && vis[1] <= _win[1];
+  if (!_lnForce && len === _lastLen && !moved && covered && rel === _lastRel) return;
+  _win = visibleWindow(lines, LN_MARGIN);
+  const off = lines[0].classList.contains('line-title') ? 1 : 0;
+  const keep = new Set();
+  for (let i = Math.max(_win[0], off); i <= _win[1]; i++) {
+    const el = lines[i];
+    const v = (rel && ci >= 0 && i !== ci) ? String(Math.abs(i - ci)) : String(i + 1 - off);
+    if (el.getAttribute('data-vim-ln') !== v) el.setAttribute('data-vim-ln', v);
+    keep.add(el);
+  }
+  for (const el of _written) if (!keep.has(el) && el.hasAttribute('data-vim-ln')) el.removeAttribute('data-vim-ln');
+  _written = keep;
+  _lnForce = false; _lastCI = ci; _lastLen = len; _lastRel = rel;
 }
 const onLNScroll = () => schedLN();
 export function setupLNObs() {
@@ -120,6 +131,7 @@ export function setupLNObs() {
 }
 export function stopLNObs() {
   if (_lnObs) { _lnObs.disconnect(); _lnObs = null; }
+  clearTimeout(_lnTimer);
   window.removeEventListener('scroll', onLNScroll);
 }
-export function clearLineNumbers() { document.querySelectorAll('[data-vim-ln]').forEach(el => el.removeAttribute('data-vim-ln')); }
+export function clearLineNumbers() { _written = new Set(); document.querySelectorAll('[data-vim-ln]').forEach(el => el.removeAttribute('data-vim-ln')); }

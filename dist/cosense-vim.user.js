@@ -213,8 +213,29 @@
 
   // src/dom.js
   var $ = (s) => document.querySelector(s);
-  var edLines = () => document.querySelectorAll(".editor .lines > .line");
-  var edCurLine = () => document.querySelector(".editor .lines > .line.cursor-line");
+  var _lc = null;
+  var _curColl = null;
+  function linesContainer() {
+    if (!_lc || !_lc.isConnected) {
+      _lc = document.querySelector(".editor .lines");
+      _curColl = _lc ? _lc.getElementsByClassName("cursor-line") : null;
+    }
+    return _lc;
+  }
+  var edLines = () => {
+    const c = linesContainer();
+    if (!c) return [];
+    const f = c.firstElementChild;
+    return !f || f.classList.contains("line") ? c.children : c.querySelectorAll(":scope > .line");
+  };
+  var _cursors = document.getElementsByClassName("cursor");
+  var cursorEl = () => _cursors[0] || null;
+  var edCurLine = () => {
+    const c = linesContainer();
+    if (!c) return null;
+    for (const el of _curColl) if (el.parentElement === c) return el;
+    return null;
+  };
   var lineCount = () => edLines().length;
   var _ti = null;
   function ti() {
@@ -415,7 +436,7 @@
   }
   function cursorCol() {
     const cl = edCurLine();
-    const cur = document.querySelector(".cursor");
+    const cur = cursorEl();
     if (!cl || !cur || isEmptyLine(cl)) return 0;
     const c = cur.getBoundingClientRect();
     const cy = c.top + c.height / 2;
@@ -569,8 +590,8 @@ body[data-vim-mode] .editor .line.vim-yf{background:var(--vim-yank)!important;tr
 .vim-cmd-colon{color:var(--vim-cmd-fg);font-weight:700;flex-shrink:0}
 #vim-cmd-input{background:transparent;border:none;outline:none;color:var(--vim-cmd-fg);font-family:inherit;font-size:inherit;flex:1;min-width:0;caret-color:var(--vim-cmd-fg)}
 @media screen and (min-width:768px){
-body[data-vim-numbers] .app:not(.presentation) .editor .lines>.line:not(.line-title)::before{content:attr(data-vim-ln);position:absolute;display:inline-block;left:-60px;z-index:10;min-width:46px;text-align:right;font-family:'SF Mono','Fira Code',monospace;font-size:16px;line-height:inherit;color:var(--vim-ln);pointer-events:none;user-select:none;transition:color .1s}
-body[data-vim-numbers] .app:not(.presentation) .editor .lines>.line.cursor-line:not(.line-title)::before{color:var(--vim-ln-cur);font-weight:700}
+body[data-vim-numbers] .app:not(.presentation) .editor .lines>.line[data-vim-ln]:not(.line-title)::before{content:attr(data-vim-ln);position:absolute;display:inline-block;left:-60px;z-index:10;min-width:46px;text-align:right;font-family:'SF Mono','Fira Code',monospace;font-size:16px;line-height:inherit;color:var(--vim-ln);pointer-events:none;user-select:none}
+body[data-vim-numbers] .app:not(.presentation) .editor .lines>.line.cursor-line[data-vim-ln]:not(.line-title)::before{color:var(--vim-ln-cur);font-weight:700}
 }
 .vim-ov{position:fixed;inset:0;z-index:100001;background:var(--vim-ov-backdrop);display:flex;align-items:flex-start;justify-content:center;padding:6vh 16px;box-sizing:border-box}
 .vim-ov-panel{background:var(--vim-ov-bg);color:var(--vim-ov-fg);border:1px solid var(--vim-ov-border);border-radius:10px;width:min(860px,100%);max-height:88vh;display:flex;flex-direction:column;box-shadow:0 20px 60px rgba(0,0,0,.35);font-family:-apple-system,BlinkMacSystemFont,"Hiragino Sans","Noto Sans JP",sans-serif;font-size:14px}
@@ -726,13 +747,18 @@ body[data-vim-numbers] .app:not(.presentation) .editor .lines>.line.cursor-line:
     f.textContent = "⏳ " + msg;
     f.classList.add("vim-fv");
   }
-  var LN_MARGIN = 40;
+  var LN_MARGIN = 15;
+  var REL_IDLE = 90;
   var _lnRaf = 0;
+  var _lnTimer = 0;
   var _lnObs = null;
   var _lastCI = -2;
   var _lastLen = -1;
   var _lnForce = true;
   var _win = [0, -1];
+  var _lastMove = 0;
+  var _written = /* @__PURE__ */ new Set();
+  var _lastRel = null;
   function schedLN() {
     if (!rt.active || _lnRaf) return;
     _lnRaf = requestAnimationFrame(doLN);
@@ -766,30 +792,36 @@ body[data-vim-numbers] .app:not(.presentation) .editor .lines>.line.cursor-line:
     const lines = edLines();
     const len = lines.length;
     if (!len) return;
-    let ci = -1;
-    const cur = document.querySelector(".editor .lines > .line.cursor-line");
-    if (cur) ci = Array.prototype.indexOf.call(lines, cur);
     const rel = cfg.relativeNumber;
-    const titleOff = lines[0].classList.contains("line-title") ? 1 : 0;
-    const value = (i) => i < titleOff ? "" : rel && ci >= 0 && i !== ci ? String(Math.abs(i - ci)) : String(i + 1 - titleOff);
-    const set = (i) => {
-      const v = value(i);
-      if (lines[i].getAttribute("data-vim-ln") !== v) lines[i].setAttribute("data-vim-ln", v);
-    };
-    const changed = _lnForce || len !== _lastLen;
-    if (!rel) {
-      if (!changed) return;
-      for (let i = 0; i < len; i++) set(i);
-    } else {
-      const vis = visibleWindow(lines, 0);
-      const covered = vis[0] >= _win[0] && vis[1] <= _win[1];
-      if (!changed && ci === _lastCI && covered) return;
-      _win = visibleWindow(lines, LN_MARGIN);
-      for (let i = _win[0]; i <= _win[1]; i++) set(i);
+    const cur = edCurLine();
+    const ci = cur ? Array.prototype.indexOf.call(lines, cur) : -1;
+    const moved = rel && ci !== _lastCI;
+    const now = performance.now();
+    if (moved && !_lnForce && rel === _lastRel && now - _lastMove < REL_IDLE * 0.8) {
+      _lastMove = now;
+      clearTimeout(_lnTimer);
+      _lnTimer = setTimeout(schedLN, REL_IDLE);
+      return;
     }
+    if (moved) _lastMove = now;
+    const vis = visibleWindow(lines, 0);
+    const covered = vis[0] >= _win[0] && vis[1] <= _win[1];
+    if (!_lnForce && len === _lastLen && !moved && covered && rel === _lastRel) return;
+    _win = visibleWindow(lines, LN_MARGIN);
+    const off = lines[0].classList.contains("line-title") ? 1 : 0;
+    const keep = /* @__PURE__ */ new Set();
+    for (let i = Math.max(_win[0], off); i <= _win[1]; i++) {
+      const el = lines[i];
+      const v = rel && ci >= 0 && i !== ci ? String(Math.abs(i - ci)) : String(i + 1 - off);
+      if (el.getAttribute("data-vim-ln") !== v) el.setAttribute("data-vim-ln", v);
+      keep.add(el);
+    }
+    for (const el of _written) if (!keep.has(el) && el.hasAttribute("data-vim-ln")) el.removeAttribute("data-vim-ln");
+    _written = keep;
     _lnForce = false;
     _lastCI = ci;
     _lastLen = len;
+    _lastRel = rel;
   }
   var onLNScroll = () => schedLN();
   function setupLNObs() {
@@ -812,9 +844,11 @@ body[data-vim-numbers] .app:not(.presentation) .editor .lines>.line.cursor-line:
       _lnObs.disconnect();
       _lnObs = null;
     }
+    clearTimeout(_lnTimer);
     window.removeEventListener("scroll", onLNScroll);
   }
   function clearLineNumbers() {
+    _written = /* @__PURE__ */ new Set();
     document.querySelectorAll("[data-vim-ln]").forEach((el) => el.removeAttribute("data-vim-ln"));
   }
 
@@ -1412,7 +1446,7 @@ body[data-vim-numbers] .app:not(.presentation) .editor .lines>.line.cursor-line:
     const half = window.innerHeight >> 1;
     if (dir > 0 && se.scrollTop >= se.scrollHeight - se.clientHeight - 1) return;
     if (dir < 0 && se.scrollTop <= 0) return;
-    const cel = $(".cursor");
+    const cel = cursorEl();
     const screenY = cel ? cel.getBoundingClientRect().top + cel.getBoundingClientRect().height / 2 : window.innerHeight / 2;
     window.scrollBy({ top: dir * half, behavior: "instant" });
     const wantScroll = se.scrollTop;
@@ -1655,7 +1689,7 @@ body[data-vim-numbers] .app:not(.presentation) .editor .lines>.line.cursor-line:
   }
   async function joinLines(count) {
     const times = Math.max(1, count - 1);
-    const cursor = $(".cursor");
+    const cursor = cursorEl();
     const savedX = cursor ? cursor.getBoundingClientRect().left : null;
     const L = curLineIdx();
     const to = Math.min(L + times, lineCount() - 1);
@@ -2270,7 +2304,7 @@ body[data-vim-numbers] .app:not(.presentation) .editor .lines>.line.cursor-line:
   }
   function followLink() {
     const cl = edCurLine();
-    const cursor = $(".cursor");
+    const cursor = cursorEl();
     if (!cl || !cursor) {
       flash("No link");
       return;
@@ -2763,7 +2797,7 @@ ${vars}
     .vim-flash          通知
     .vim-vl-sel         ビジュアル行モードで選択中の行
     .vim-yf             ヤンクしたときの一瞬のハイライト
-    .line::before       行番号 (data-vim-ln 属性の値を表示)
+    .line::before       行番号 (data-vim-ln 属性の値。画面付近の行だけに付く)
     .vim-ov             ヘルプ / 設定画面
 
 例: モードバーを隠す
@@ -3287,8 +3321,13 @@ ${vars}
     dispatchMode(ev);
     if (!ev._blocked) replayNative(ev);
   }
+  var _modals = document.getElementsByClassName("full-content-modal");
+  function openModal() {
+    for (const m of _modals) if (m.classList.contains("in")) return m;
+    return null;
+  }
   function handleImageModal(e) {
-    const modal = $(".full-content-modal.in");
+    const modal = openModal();
     if (!modal) return false;
     if (e.key === "q" || e.key === "Escape") {
       block2(e);

@@ -103,8 +103,11 @@ export function processFake(ev) {
   if (!ev._blocked) replayNative(ev);
 }
 
+// live collection: a '.full-content-modal.in' query on every key walks the whole page
+const _modals = document.getElementsByClassName('full-content-modal');
+function openModal() { for (const m of _modals) if (m.classList.contains('in')) return m; return null; }
 function handleImageModal(e) {
-  const modal = $('.full-content-modal.in');
+  const modal = openModal();
   if (!modal) return false;
   if (e.key === 'q' || e.key === 'Escape') {
     block(e);

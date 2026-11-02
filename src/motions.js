@@ -2,7 +2,7 @@
 import { lineChars, lastLine } from './env.js';
 import {
   $, dk, dkRaw, edLines, edCurLine, lineCount, curLineIdx, cursorCol, jumpToLine, selectToLine,
-  findEmptyLine, contentLineToIdx, hasSel, placeCursor, withRW,
+  findEmptyLine, contentLineToIdx, hasSel, placeCursor, withRW, cursorEl,
 } from './dom.js';
 import { wait } from './util.js';
 
@@ -278,7 +278,7 @@ export function halfScroll(dir) {
   const half = window.innerHeight >> 1;
   if (dir > 0 && se.scrollTop >= se.scrollHeight - se.clientHeight - 1) return;
   if (dir < 0 && se.scrollTop <= 0) return;
-  const cel = $('.cursor');
+  const cel = cursorEl();
   const screenY = cel ? cel.getBoundingClientRect().top + cel.getBoundingClientRect().height / 2 : window.innerHeight / 2;
   window.scrollBy({ top: dir * half, behavior: 'instant' });
   const wantScroll = se.scrollTop;

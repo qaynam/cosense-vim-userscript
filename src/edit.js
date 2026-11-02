@@ -3,7 +3,7 @@ import { lineChars } from './env.js';
 import {
   $, dk, vimInsert, clickAt, edLines, edCurLine, lineCount, curLineIdx, cursorCol, cursorAtEOL,
   isEmptyLine, jumpToLine, readLineTexts, findEmptyLine, contentLineToIdx, selText, hasSel,
-  setYank, readPasteSource, focused, focus,
+  setYank, readPasteSource, focused, focus, cursorEl,
 } from './dom.js';
 import { setMode, vlRange, clearVL, updateVL } from './mode.js';
 import { flash, busy } from './ui.js';
@@ -82,7 +82,7 @@ export async function changeToEOL() {
 }
 export async function joinLines(count) {
   const times = Math.max(1, count - 1);
-  const cursor = $('.cursor');
+  const cursor = cursorEl();
   const savedX = cursor ? cursor.getBoundingClientRect().left : null;
   const L = curLineIdx(); const to = Math.min(L + times, lineCount() - 1);
   if (to <= L) return;

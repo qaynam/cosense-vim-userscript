@@ -66,8 +66,8 @@ body[data-vim-mode] .editor .line.vim-yf{background:var(--vim-yank)!important;tr
 .vim-cmd-colon{color:var(--vim-cmd-fg);font-weight:700;flex-shrink:0}
 #vim-cmd-input{background:transparent;border:none;outline:none;color:var(--vim-cmd-fg);font-family:inherit;font-size:inherit;flex:1;min-width:0;caret-color:var(--vim-cmd-fg)}
 @media screen and (min-width:768px){
-body[data-vim-numbers] .app:not(.presentation) .editor .lines>.line:not(.line-title)::before{content:attr(data-vim-ln);position:absolute;display:inline-block;left:-60px;z-index:10;min-width:46px;text-align:right;font-family:'SF Mono','Fira Code',monospace;font-size:16px;line-height:inherit;color:var(--vim-ln);pointer-events:none;user-select:none;transition:color .1s}
-body[data-vim-numbers] .app:not(.presentation) .editor .lines>.line.cursor-line:not(.line-title)::before{color:var(--vim-ln-cur);font-weight:700}
+body[data-vim-numbers] .app:not(.presentation) .editor .lines>.line[data-vim-ln]:not(.line-title)::before{content:attr(data-vim-ln);position:absolute;display:inline-block;left:-60px;z-index:10;min-width:46px;text-align:right;font-family:'SF Mono','Fira Code',monospace;font-size:16px;line-height:inherit;color:var(--vim-ln);pointer-events:none;user-select:none}
+body[data-vim-numbers] .app:not(.presentation) .editor .lines>.line.cursor-line[data-vim-ln]:not(.line-title)::before{color:var(--vim-ln-cur);font-weight:700}
 }
 .vim-ov{position:fixed;inset:0;z-index:100001;background:var(--vim-ov-backdrop);display:flex;align-items:flex-start;justify-content:center;padding:6vh 16px;box-sizing:border-box}
 .vim-ov-panel{background:var(--vim-ov-bg);color:var(--vim-ov-fg);border:1px solid var(--vim-ov-border);border-radius:10px;width:min(860px,100%);max-height:88vh;display:flex;flex-direction:column;box-shadow:0 20px 60px rgba(0,0,0,.35);font-family:-apple-system,BlinkMacSystemFont,"Hiragino Sans","Noto Sans JP",sans-serif;font-size:14px}

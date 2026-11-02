@@ -379,7 +379,7 @@ ${vars}
     .vim-flash          通知
     .vim-vl-sel         ビジュアル行モードで選択中の行
     .vim-yf             ヤンクしたときの一瞬のハイライト
-    .line::before       行番号 (data-vim-ln 属性の値を表示)
+    .line::before       行番号 (data-vim-ln 属性の値。画面付近の行だけに付く)
     .vim-ov             ヘルプ / 設定画面
 
 例: モードバーを隠す

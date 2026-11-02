@@ -14,14 +14,15 @@ test('boots into normal mode with the IME guard on', async () => {
   env.close();
 });
 
-test('line helpers ignore #compute-line and number from the first content line', async () => {
+test('line helpers ignore #compute-line; numbers: cursor line absolute, others relative', async () => {
   const env = await makeEnv().boot();
   await sleep(50);
   const lines = env.document.querySelectorAll('.editor .lines > .line');
   assert.equal(lines.length, 7);
-  assert.equal(lines[0].getAttribute('data-vim-ln'), '');   // title
-  assert.equal(lines[2].getAttribute('data-vim-ln'), '2');  // cursor line shows its absolute number
-  assert.equal(lines[1].getAttribute('data-vim-ln'), '1');  // relative distance
+  assert.equal(lines[0].getAttribute('data-vim-ln'), null);   // title
+  assert.equal(lines[2].getAttribute('data-vim-ln'), '2');    // cursor line shows its absolute number
+  assert.equal(lines[1].getAttribute('data-vim-ln'), '1');    // relative distance
+  assert.equal(lines[5].getAttribute('data-vim-ln'), '3');
   env.close();
 });
 

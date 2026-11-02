@@ -9,8 +9,29 @@ export { $ };
 
 // NOTE: '.editor .line' also matches the hidden measuring line in #compute-line.
 // Only direct children of .lines are real lines (index matches cosense.Page.lines).
-export const edLines = () => document.querySelectorAll('.editor .lines > .line');
-export const edCurLine = () => document.querySelector('.editor .lines > .line.cursor-line');
+// Live collections instead of querySelectorAll: on a 1600-line page a selector query walks
+// ~50k elements (~0.35 ms) and these run several times per key; .children is free.
+let _lc = null, _curColl = null;
+function linesContainer() {
+  if (!_lc || !_lc.isConnected) {
+    _lc = document.querySelector('.editor .lines');
+    _curColl = _lc ? _lc.getElementsByClassName('cursor-line') : null;
+  }
+  return _lc;
+}
+export const edLines = () => {
+  const c = linesContainer(); if (!c) return [];
+  const f = c.firstElementChild;
+  // every child of .lines is a .line today; fall back to a query if that ever changes
+  return !f || f.classList.contains('line') ? c.children : c.querySelectorAll(':scope > .line');
+};
+const _cursors = document.getElementsByClassName('cursor');
+export const cursorEl = () => _cursors[0] || null;     // cosense's caret element
+export const edCurLine = () => {
+  const c = linesContainer(); if (!c) return null;
+  for (const el of _curColl) if (el.parentElement === c) return el;
+  return null;
+};
 export const lineCount = () => edLines().length;
 
 let _ti = null;
@@ -151,7 +172,7 @@ export function contentLineToIdx(num) {
 
 // Column of the cursor in the current line (index into Array.from(text))
 export function cursorCol() {
-  const cl = edCurLine(); const cur = document.querySelector('.cursor');
+  const cl = edCurLine(); const cur = cursorEl();
   if (!cl || !cur || isEmptyLine(cl)) return 0;
   const c = cur.getBoundingClientRect(); const cy = c.top + c.height / 2;
   let lastOnRow = -1;

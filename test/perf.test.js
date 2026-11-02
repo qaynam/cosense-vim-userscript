@@ -6,6 +6,7 @@ import assert from 'node:assert/strict';
 import { makeEnv, sleep } from './helpers.js';
 import { fakeCosense, bigPage } from './fake-cosense.js';
 
+
 test('visual 636k: one click instead of 636 Shift+ArrowUp', async () => {
   const env = makeEnv({ lines: bigPage(700), cursor: 690 });
   const m = fakeCosense(env);
@@ -117,18 +118,54 @@ test('visual line: only changed lines are touched on j/k', async () => {
   env.close();
 });
 
-test('relative numbers: only the lines on screen are rewritten per move', async () => {
-  const env = makeEnv({ lines: bigPage(1000), cursor: 3 });
+test('relative numbers: only lines on screen are rewritten, and not while j/k repeats', async () => {
+  const env = makeEnv({ lines: bigPage(200), cursor: 3 });
   const m = fakeCosense(env, { viewport: 400 });   // 20 lines on screen
-  await env.boot(); m.set(3, 0); await sleep(200);
+  await env.boot(); m.set(3, 0); await sleep(250);
   let writes = 0;
   const obs = new env.window.MutationObserver(ms => { writes += ms.length; });
   obs.observe(env.document.querySelector('.editor .lines'), { attributes: true, attributeFilter: ['data-vim-ln'], subtree: true });
   env.press('j'); await sleep(200);
-  obs.disconnect();
-  assert.ok(writes > 0 && writes <= 20 + 2 * 40 + 2, `attribute writes: ${writes}`);
+  const single = writes;
+  assert.ok(single > 0 && single <= 20 + 2 * 15 + 2, `attribute writes for one j: ${single}`);
   const ln = i => env.document.querySelectorAll('.editor .lines > .line')[i].getAttribute('data-vim-ln');
   assert.equal(ln(4), '4', 'cursor line shows its absolute number');
   assert.equal(ln(6), '2');
+  // a burst of j (key repeat, ~30 ms apart): numbers are not rewritten on every key
+  let batches = 0;
+  const obs2 = new env.window.MutationObserver(() => { batches++; });
+  obs2.observe(env.document.querySelector('.editor .lines'), { attributes: true, attributeFilter: ['data-vim-ln'], subtree: true });
+  // drive the clock by hand so a slow / busy test machine can't stretch the gaps between keys
+  let clock = 1e6; const realNow = env.window.performance.now.bind(env.window.performance);
+  env.window.performance.now = () => clock;
+  for (let i = 0; i < 12; i++) { clock += 30; env.press('j'); await sleep(5); }
+  const during = batches;
+  clock += 1000;
+  await sleep(250);
+  env.window.performance.now = realNow;
+  obs.disconnect(); obs2.disconnect();
+  assert.ok(during <= 1, `refreshes during a 12-key burst: ${during}`);
+  assert.equal(ln(16), '16');
+  assert.equal(ln(18), '2', 'refreshed after the burst');
+  env.close();
+});
+
+test('absolute numbers: only lines around the screen carry one, and they follow scrolling', async () => {
+  const env = makeEnv({ lines: bigPage(300), cursor: 3 });
+  fakeCosense(env, { viewport: 400 });
+  env.window.localStorage.setItem('cosense-vim:global', JSON.stringify({ relativeNumber: false }));
+  await env.boot(); await sleep(150);
+  const ls = () => env.document.querySelectorAll('.editor .lines > .line');
+  const numbered = () => env.document.querySelectorAll('[data-vim-ln]').length;
+  assert.ok(numbered() > 0 && numbered() <= 20 + 15 + 2, `numbered lines: ${numbered()}`);
+  assert.equal(ls()[5].getAttribute('data-vim-ln'), '5');
+  assert.equal(ls()[200].getAttribute('data-vim-ln'), null);
+  // scroll: the fake layout puts line L at y = L*20 - scrollY
+  const proto = env.window.Element.prototype; const orig = proto.getBoundingClientRect;
+  proto.getBoundingClientRect = function () { const r = orig.call(this); return r.top === undefined ? r : { ...r, top: r.top - 3800, bottom: r.bottom - 3800, y: r.top - 3800 }; };
+  env.window.dispatchEvent(new env.window.Event('scroll')); await sleep(100);
+  proto.getBoundingClientRect = orig;
+  assert.equal(ls()[200].getAttribute('data-vim-ln'), '200');
+  assert.equal(ls()[5].getAttribute('data-vim-ln'), null);
   env.close();
 });
