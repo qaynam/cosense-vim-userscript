@@ -373,8 +373,11 @@ ${vars}
     body[data-vim-numbers]              行番号を表示中
 
 主な要素
-    #vim-ind            モードバー
+    #vim-ind            モード表示。Cosense のフッター (.footer .status-bar)
+                        の接続状態の左に入る (data-where="footer")。
+                        フッターがなければ画面下のバーになる
                         .vim-mn .vim-mi .vim-mv .vim-ml-m (モード別)
+                        .vim-ml モード名  .vim-mp 入力途中のキー
     #vim-cmd            コマンドライン
     .vim-flash          通知
     .vim-vl-sel         ビジュアル行モードで選択中の行

@@ -5,34 +5,68 @@ import { $, edLines, edCurLine } from './dom.js';
 import { ensureStyles } from './theme.js';
 
 // ---- indicator ----
-let _indEl = null, _colRO = null;
+// The mode sits in cosense's own footer (.footer .status-bar, left of the connection status)
+// so it never ends up under cosense's bar and picks up the footer's look. Without a footer
+// it falls back to a fixed bar under the page column.
+let _indEl = null, _colRO = null, _footObs = null;
 const MODE_LABEL = {
-  normal: { t: '-- NORMAL --', c: 'vim-mn' }, insert: { t: '-- INSERT --', c: 'vim-mi' },
-  visual: { t: '-- VISUAL --', c: 'vim-mv' }, 'visual-line': { t: '-- VISUAL LINE --', c: 'vim-ml-m' },
+  normal: { t: '-- NORMAL --', s: 'NORMAL', c: 'vim-mn' }, insert: { t: '-- INSERT --', s: 'INSERT', c: 'vim-mi' },
+  visual: { t: '-- VISUAL --', s: 'VISUAL', c: 'vim-mv' }, 'visual-line': { t: '-- VISUAL LINE --', s: 'V-LINE', c: 'vim-ml-m' },
 };
+const inFooter = () => !!_indEl && _indEl.dataset.where === 'footer';
+export function placeIndicator() {
+  if (!_indEl) return;
+  const sb = document.querySelector('.footer .status-bar');
+  if (sb) {
+    // right side, just left of the connection status (the item with the lock icon)
+    const anchor = [...sb.children].find(el => el !== _indEl && el.querySelector('.item, .kamon'))
+      || sb.querySelector(':scope > .plan-badge');
+    if (_indEl.parentElement !== sb || (anchor && _indEl.nextElementSibling !== anchor)) sb.insertBefore(_indEl, anchor || null);
+    if (!inFooter()) { _indEl.dataset.where = 'footer'; _indEl.style.left = _indEl.style.width = ''; updateIndicator(); }
+    watchFooter(sb.closest('.footer'));
+  } else {
+    if (_indEl.parentElement !== document.body) document.body.appendChild(_indEl);
+    if (inFooter()) { delete _indEl.dataset.where; updateIndicator(); }
+    syncBarPos();
+  }
+}
+// cosense fills in / re-renders its footer after we boot: keep the indicator in place
+function watchFooter(footer) {
+  if (!footer || _footObs?._target === footer) return;
+  _footObs?.disconnect();
+  _footObs = new MutationObserver(() => { if (_indEl && rt.active) placeIndicator(); });
+  _footObs._target = footer;
+  _footObs.observe(footer, { childList: true, subtree: true });
+}
 export function createIndicator() {
   _indEl?.remove();
   _indEl = document.createElement('div'); _indEl.id = 'vim-ind';
-  _indEl.innerHTML = '<div class="vim-ml"></div><div class="vim-mp"></div>';
-  document.body.appendChild(_indEl);
-  syncBarPos(); updateIndicator();
+  _indEl.innerHTML = '<span class="vim-ml"></span><span class="vim-mp"></span>';
+  placeIndicator(); updateIndicator();
 }
-export function removeIndicator() { _indEl?.remove(); _indEl = null; _colRO?.disconnect(); }
-export function showIndicator(on) { if (_indEl) _indEl.style.display = on && !state.cmdLine ? 'flex' : 'none'; }
+export function removeIndicator() { _indEl?.remove(); _indEl = null; _colRO?.disconnect(); _footObs?.disconnect(); _footObs = null; }
+export function showIndicator(on) {
+  if (!_indEl) return;
+  if (on && !_indEl.isConnected) placeIndicator();
+  _indEl.style.display = on && !state.cmdLine ? 'flex' : 'none';
+}
 export function setBusyMark(on) { if (!_indEl) return; if (on) _indEl.dataset.busy = '1'; else delete _indEl.dataset.busy; }
 export function updateIndicator() {
   if (!_indEl) return;
   const m = MODE_LABEL[state.mode];
   _indEl.className = m.c;
-  _indEl.querySelector('.vim-ml').textContent = m.t;
+  _indEl.querySelector('.vim-ml').textContent = inFooter() ? m.s : m.t;
   const p = state.pending;
   _indEl.querySelector('.vim-mp').textContent = state.cmdBuf + (p ? (p.type === 'obj' ? p.kind : p.type === 'find' ? p.kind : p.type) : '');
 }
-// The mode bar and the command line follow the page column
+// The fallback mode bar and the command line follow the page column; the command line
+// sits above cosense's footer
 export function syncBarPos() {
   const col = $('.col-page'); if (!col) return;
   const r = col.getBoundingClientRect();
-  for (const el of [_indEl, document.getElementById('vim-cmd')]) if (el) { el.style.left = r.left + 'px'; el.style.width = r.width + 'px'; }
+  const cmd = document.getElementById('vim-cmd');
+  for (const el of [inFooter() ? null : _indEl, cmd]) if (el) { el.style.left = r.left + 'px'; el.style.width = r.width + 'px'; }
+  if (cmd) { const f = $('.footer'); cmd.style.bottom = (f ? Math.max(0, window.innerHeight - f.getBoundingClientRect().top) : 0) + 'px'; }
 }
 export function observeColPage() {
   if (!('ResizeObserver' in window)) return;

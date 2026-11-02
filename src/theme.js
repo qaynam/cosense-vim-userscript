@@ -51,16 +51,21 @@ body[data-vim-mode="insert"] .cursor svg rect{width:2px!important;fill:var(--vim
 body[data-vim-mode] .editor .line.vim-vl-sel{background:var(--vim-vl-sel)!important;box-shadow:inset 3px 0 0 var(--vim-vl-border)}
 body[data-vim-mode] .editor .line.vim-vl-sel .text.code-block,body[data-vim-mode] .editor .line.vim-vl-sel .code-body{background-color:transparent!important}
 body[data-vim-mode] .editor .line.vim-yf{background:var(--vim-yank)!important;transition:background .15s}
-#vim-ind{position:fixed;bottom:0;z-index:250;padding:4px 16px;font-family:'SF Mono','Fira Code','Cascadia Code',monospace;font-size:12px;font-weight:700;letter-spacing:.05em;display:flex;align-items:center;justify-content:center;gap:12px;pointer-events:none;transition:background .15s,color .15s;box-sizing:border-box}
-#vim-ind.vim-mn{background:var(--vim-bar-normal-bg);color:var(--vim-bar-normal-fg);border-top:2px solid var(--vim-bar-normal-fg)}
-#vim-ind.vim-mi{background:var(--vim-bar-insert-bg);color:var(--vim-bar-insert-fg);border-top:2px solid var(--vim-bar-insert-fg)}
-#vim-ind.vim-mv{background:var(--vim-bar-visual-bg);color:var(--vim-bar-visual-fg);border-top:2px solid var(--vim-bar-visual-fg)}
-#vim-ind.vim-ml-m{background:var(--vim-bar-vline-bg);color:var(--vim-bar-vline-fg);border-top:2px solid var(--vim-bar-vline-fg)}
+#vim-ind:not([data-where=footer]){position:fixed;bottom:0;z-index:250;padding:4px 16px;font-family:'SF Mono','Fira Code','Cascadia Code',monospace;font-size:12px;font-weight:700;letter-spacing:.05em;display:flex;align-items:center;justify-content:center;gap:12px;pointer-events:none;transition:background .15s,color .15s;box-sizing:border-box}
+#vim-ind:not([data-where=footer]).vim-mn{background:var(--vim-bar-normal-bg);color:var(--vim-bar-normal-fg);border-top:2px solid var(--vim-bar-normal-fg)}
+#vim-ind:not([data-where=footer]).vim-mi{background:var(--vim-bar-insert-bg);color:var(--vim-bar-insert-fg);border-top:2px solid var(--vim-bar-insert-fg)}
+#vim-ind:not([data-where=footer]).vim-mv{background:var(--vim-bar-visual-bg);color:var(--vim-bar-visual-fg);border-top:2px solid var(--vim-bar-visual-fg)}
+#vim-ind:not([data-where=footer]).vim-ml-m{background:var(--vim-bar-vline-bg);color:var(--vim-bar-vline-fg);border-top:2px solid var(--vim-bar-vline-fg)}
 #vim-ind[data-busy] .vim-ml::after{content:' …'}
-.vim-mp{color:var(--vim-pending);font-size:14px;position:absolute;right:16px}
+#vim-ind:not([data-where=footer]) .vim-mp{color:var(--vim-pending);font-size:14px;position:absolute;right:16px}
+#vim-ind[data-where=footer]{display:flex;align-items:center;gap:6px;padding:0 8px;font-weight:700;letter-spacing:.04em;white-space:nowrap;pointer-events:none}
+#vim-ind[data-where=footer].vim-mi .vim-ml{color:var(--vim-bar-insert-fg)}
+#vim-ind[data-where=footer].vim-mv .vim-ml{color:var(--vim-bar-visual-fg)}
+#vim-ind[data-where=footer].vim-ml-m .vim-ml{color:var(--vim-bar-vline-fg)}
+#vim-ind[data-where=footer] .vim-mp{color:var(--vim-pending);font-weight:400}
 .vim-flash{position:fixed;bottom:32px;left:50%;transform:translateX(-50%) translateY(10px);background:var(--vim-flash-bg);color:var(--vim-flash-fg);padding:6px 16px;border-radius:6px;font-family:'SF Mono',monospace;font-size:12px;z-index:100002;opacity:0;pointer-events:none;transition:opacity .2s,transform .2s;border:1px solid rgba(128,128,128,.2);max-width:80vw;white-space:pre-wrap}
 .vim-flash.vim-fv{opacity:1;transform:translateX(-50%) translateY(0)}
-#vim-cmd{position:fixed;bottom:0;z-index:260;padding:4px 0;font-family:'SF Mono','Fira Code','Cascadia Code',monospace;font-size:14px;display:none;align-items:center;box-sizing:border-box;background:var(--vim-cmd-bg);border-top:2px solid var(--vim-cmd-border)}
+#vim-cmd{position:fixed;bottom:0;z-index:310;padding:4px 0;font-family:'SF Mono','Fira Code','Cascadia Code',monospace;font-size:14px;display:none;align-items:center;box-sizing:border-box;background:var(--vim-cmd-bg);border-top:2px solid var(--vim-cmd-border)}
 .vim-cmd-spacer{flex:0 0 calc(50% - 20px)}
 .vim-cmd-body{display:flex;align-items:center;gap:2px;flex:1;min-width:0}
 .vim-cmd-colon{color:var(--vim-cmd-fg);font-weight:700;flex-shrink:0}

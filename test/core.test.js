@@ -178,3 +178,37 @@ test('project switch reloads that project\'s settings', async () => {
   assert.equal(env.vim.active, true);
   env.close();
 });
+
+test("the mode sits in cosense's footer, left of the connection status, and survives re-renders", async () => {
+  const env = makeEnv();
+  const d = env.document;
+  const footer = d.createElement('div'); footer.className = 'footer';
+  // the connection status shows up only after we boot
+  footer.innerHTML = '<div class="status-bar"><div class="page-title">テスト</div><div class="plan-badge"><a href="/pricing">Free Plan</a></div></div>';
+  d.body.appendChild(footer);
+  await env.boot();
+  const ind = () => d.getElementById('vim-ind');
+  const sb = () => d.querySelector('.footer .status-bar');
+  assert.equal(ind().parentElement, sb());
+  assert.equal(ind().dataset.where, 'footer');
+  assert.equal(ind().querySelector('.vim-ml').textContent, 'NORMAL');
+  const lock = d.createElement('div'); lock.innerHTML = '<span class="item"><span class="kamon kamon-locked"></span></span>';
+  sb().insertBefore(lock, sb().querySelector('.plan-badge'));
+  await sleep(20);
+  assert.equal(ind().nextElementSibling, lock, 'just left of the connection status');
+  env.press('i');
+  assert.equal(ind().querySelector('.vim-ml').textContent, 'INSERT');
+  env.press('Escape');
+  env.press('d');
+  assert.equal(ind().querySelector('.vim-mp').textContent, 'd');
+  env.press('Escape');
+  // cosense re-renders its status bar
+  const fresh = sb().cloneNode(false); fresh.innerHTML = '<div class="page-title">x</div><div><span class="item"></span></div>';
+  sb().replaceWith(fresh);
+  await sleep(20);
+  assert.equal(ind().parentElement, fresh);
+  assert.equal(ind().nextElementSibling, fresh.lastElementChild);
+  assert.equal(ind().querySelector('.vim-ml').textContent, 'NORMAL');
+  assert.deepEqual(env.errors, []);
+  env.close();
+});
