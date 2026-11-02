@@ -2213,6 +2213,53 @@ body[data-vim-numbers] .app:not(.presentation) .editor .lines>.line.cursor-line:
       }, 50);
     }, 300);
   }
+  var LINE_HASH = /^#([0-9a-f]{24})$/i;
+  var _lineJump = 0;
+  function hashLineId() {
+    const m = location.hash.match(LINE_HASH);
+    return m ? m[1] : null;
+  }
+  function cursorToLine(el) {
+    const idx = Array.prototype.indexOf.call(edLines(), el);
+    if (idx < 0) return;
+    const r = el.getBoundingClientRect();
+    if (r.bottom < 0 || r.top > window.innerHeight) el.scrollIntoView({ block: "center" });
+    focus();
+    setMode("normal");
+    jumpToLine(idx);
+    setTimeout(() => {
+      focus();
+      schedLN();
+    }, 50);
+  }
+  function jumpToHashLine(id = hashLineId(), { immediate = false, maxMs = 3e3 } = {}) {
+    if (!id) return;
+    const tok = ++_lineJump;
+    const t0 = Date.now();
+    let lastTop = null, still = 0;
+    const tick = () => {
+      if (tok !== _lineJump || !rt.active || layout() !== "page") return;
+      const el = document.getElementById("L" + id);
+      if (el) {
+        if (immediate) {
+          cursorToLine(el);
+          return;
+        }
+        const top = Math.round(el.getBoundingClientRect().top);
+        still = top === lastTop ? still + 1 : 0;
+        lastTop = top;
+        if (still >= 2 || Date.now() - t0 > maxMs) {
+          cursorToLine(el);
+          return;
+        }
+      } else if (Date.now() - t0 > maxMs) return;
+      setTimeout(tick, 100);
+    };
+    setTimeout(tick, immediate ? 30 : 100);
+  }
+  var cancelHashLineJump = () => {
+    _lineJump++;
+  };
   function previewImageFor(el) {
     for (const s of [el.nextElementSibling, el.previousElementSibling]) {
       if (!s) continue;
@@ -2262,11 +2309,14 @@ body[data-vim-numbers] .app:not(.presentation) .editor .lines>.line.cursor-line:
     const anchor = target.closest("a[href]");
     if (anchor) {
       saveNavCursor();
+      const href = anchor.getAttribute("href") || "";
+      const samePage = href.startsWith("/") && decodeURIComponent(href.split("#")[0]) === decodeURIComponent(location.pathname);
       const r = anchor.getBoundingClientRect();
       const o = { button: 0, clientX: r.left + 4, clientY: r.top + r.height / 2, bubbles: true, cancelable: true, view: window };
       anchor.dispatchEvent(new MouseEvent("mousedown", o));
       anchor.dispatchEvent(new MouseEvent("mouseup", o));
       anchor.dispatchEvent(new MouseEvent("click", o));
+      if (samePage && /#[0-9a-f]{24}$/i.test(href)) jumpToHashLine(href.slice(-24), { immediate: true });
       flash("Following link");
       return;
     }
@@ -2495,6 +2545,8 @@ Vim が動くのは、エディター (textarea#text-input) にフォーカス�
     gd                  カーソル下のリンクを開く                       *gd*
                           内部リンク・他プロジェクトのリンク
                               Cosense にクリックを渡して遷移
+                          行リンク ([ページ#行ID])
+                              遷移して、その行にカーソルを置く
                           外部 URL ([タイトル URL] 形式も可)
                               新しいタブで開く
                           画像
@@ -3939,6 +3991,7 @@ ${vars}
     abortQueue();
     resetMapState();
     cancelRecording();
+    cancelHashLineJump();
     if (layout() !== "page") return;
     setModeQuiet("normal");
     setTimeout(() => {
@@ -3946,8 +3999,10 @@ ${vars}
       setupLNObs();
       syncRO();
     }, 200);
+    const ownCursor = !!rt.navPending || !!rt.pendingMark;
     onNavPageChanged();
     consumePendingMark();
+    if (!ownCursor) jumpToHashLine();
   }
   function onResize() {
     syncBarPos();
@@ -3974,6 +4029,7 @@ ${vars}
         setupLNObs();
         observeColPage();
         syncBarPos();
+        jumpToHashLine();
       }, 100);
     } else onLayoutChanged();
     if (Store.read("seen") == null) {

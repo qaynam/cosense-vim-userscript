@@ -13,7 +13,7 @@ import { setMode, setModeQuiet, clearVL } from './mode.js';
 import { onKey, parseBuf } from './keys.js';
 import { abortQueue } from './queue.js';
 import { bindTextarea, unbindTextarea, onBeforeInput, onWinFocus } from './textarea.js';
-import { onNavPageChanged } from './nav.js';
+import { onNavPageChanged, jumpToHashLine, cancelHashLineJump } from './nav.js';
 import { consumePendingMark } from './marks.js';
 import { cancelRecording } from './repeat.js';
 import { setConfigKeymap, resetMapState, parseKeys } from './keymap.js';
@@ -35,12 +35,15 @@ function onLayoutChanged() {
 }
 function onPageChanged() {
   if (!rt.active) return;
-  resetTextareaCache(); abortQueue(); resetMapState(); cancelRecording();
+  resetTextareaCache(); abortQueue(); resetMapState(); cancelRecording(); cancelHashLineJump();
   if (layout() !== 'page') return;
   setModeQuiet('normal');
   setTimeout(() => { bindTextarea(); setupLNObs(); syncRO(); }, 200);
+  // CTRL-O / CTRL-I and uppercase marks put the cursor back themselves
+  const ownCursor = !!rt.navPending || !!rt.pendingMark;
   onNavPageChanged();
   consumePendingMark();
+  if (!ownCursor) jumpToHashLine();          // URL ends with #lineId (line link)
 }
 function onResize() { syncBarPos(); schedLN(); }
 
@@ -59,7 +62,7 @@ function setup() {
   applyConfig(cfg.imeGuard);
   if (layout() === 'page') {
     setMode('normal'); showIndicator(true);
-    setTimeout(() => { bindTextarea(); focus(); setupLNObs(); observeColPage(); syncBarPos(); }, 100);
+    setTimeout(() => { bindTextarea(); focus(); setupLNObs(); observeColPage(); syncBarPos(); jumpToHashLine(); }, 100);
   } else onLayoutChanged();
   if (Store.read('seen') == null) { Store.write('seen', 1); setTimeout(() => flash(':help で使い方 / :settings で設定', 4000), 800); }
 }

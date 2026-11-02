@@ -1,7 +1,7 @@
 // gd / CTRL-O / CTRL-I
 import { rt } from './state.js';
 import { layout, showPage } from './env.js';
-import { $, edCurLine, focused, focus, curLineIdx, lineCount, jumpToLine, resetTextareaCache } from './dom.js';
+import { $, edCurLine, edLines, focused, focus, curLineIdx, lineCount, jumpToLine, resetTextareaCache } from './dom.js';
 import { setMode } from './mode.js';
 import { flash, schedLN } from './ui.js';
 import { bindTextarea } from './textarea.js';
@@ -33,6 +33,40 @@ function restoreNav() {
     setTimeout(() => { focus(); bindTextarea(); schedLN(); }, 50);
   }, 300);
 }
+
+// ---- line links: [page#lineId] → cursor on that line ----
+// Another page: cosense renders it after page:changed and may scroll to the line ~1 s later
+// (giving it a "permalink" highlight). Wait until the line exists and has stopped moving,
+// then click it. Same page (gd from the line being edited): cosense only updates the URL,
+// so jump straight away.
+const LINE_HASH = /^#([0-9a-f]{24})$/i;
+let _lineJump = 0;
+export function hashLineId() { const m = location.hash.match(LINE_HASH); return m ? m[1] : null; }
+function cursorToLine(el) {
+  const idx = Array.prototype.indexOf.call(edLines(), el);
+  if (idx < 0) return;
+  const r = el.getBoundingClientRect();
+  if (r.bottom < 0 || r.top > window.innerHeight) el.scrollIntoView({ block: 'center' });
+  focus(); setMode('normal'); jumpToLine(idx);
+  setTimeout(() => { focus(); schedLN(); }, 50);
+}
+export function jumpToHashLine(id = hashLineId(), { immediate = false, maxMs = 3000 } = {}) {
+  if (!id) return;
+  const tok = ++_lineJump; const t0 = Date.now(); let lastTop = null, still = 0;
+  const tick = () => {
+    if (tok !== _lineJump || !rt.active || layout() !== 'page') return;
+    const el = document.getElementById('L' + id);
+    if (el) {
+      if (immediate) { cursorToLine(el); return; }
+      const top = Math.round(el.getBoundingClientRect().top);
+      still = top === lastTop ? still + 1 : 0; lastTop = top;
+      if (still >= 2 || Date.now() - t0 > maxMs) { cursorToLine(el); return; }
+    } else if (Date.now() - t0 > maxMs) return;
+    setTimeout(tick, 100);
+  };
+  setTimeout(tick, immediate ? 30 : 100);
+}
+export const cancelHashLineJump = () => { _lineJump++; };
 
 // ---- image preview ----
 // The preview <img> sits next to the line's chars: before them in older cosense, after them
@@ -68,12 +102,16 @@ export function followLink() {
   const anchor = target.closest('a[href]');
   if (anchor) {
     saveNavCursor();
+    const href = anchor.getAttribute('href') || '';
+    const samePage = href.startsWith('/') && decodeURIComponent(href.split('#')[0]) === decodeURIComponent(location.pathname);
     // real mouse events so cosense routes internal / cross-project links itself
     const r = anchor.getBoundingClientRect();
     const o = { button: 0, clientX: r.left + 4, clientY: r.top + r.height / 2, bubbles: true, cancelable: true, view: window };
     anchor.dispatchEvent(new MouseEvent('mousedown', o));
     anchor.dispatchEvent(new MouseEvent('mouseup', o));
     anchor.dispatchEvent(new MouseEvent('click', o));
+    // another page: page:changed picks the line up from the URL
+    if (samePage && /#[0-9a-f]{24}$/i.test(href)) jumpToHashLine(href.slice(-24), { immediate: true });
     flash('Following link');
     return;
   }
