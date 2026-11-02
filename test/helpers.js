@@ -5,17 +5,18 @@ import { JSDOM } from 'jsdom';
 export const SRC = readFileSync(new URL('../dist/cosense-vim.user.js', import.meta.url), 'utf8');
 export const sleep = ms => new Promise(r => setTimeout(r, ms));
 
-const charSpans = t => Array.from(t).map((c, j) => `<span class="char-index c-${j}" data-char-index="${j}">${c}</span>`).join('');
+export const charSpans = t => Array.from(t).map((c, j) => `<span class="char-index c-${j}" data-char-index="${j}">${c}</span>`).join('');
 
-export function makeEnv({ lines = ['テスト', '', 'hello world foo', 'second line', '', 'para two', 'last'], cursor = 2, project = 'proj', cosenseOverride } = {}) {
+export function makeEnv({ lines = ['テスト', '', 'hello world foo', 'second line', '', 'para two', 'last'], cursor = 2, project = 'proj', cosenseOverride, ids, hash = '', lineHtml } = {}) {
+  const idOf = i => (ids ? ids[i] : 'id' + i);
   const html = `<!doctype html><html><head></head><body>
 <div class="app"><div class="col-page"><div class="editor" id="editor">
 <div class="compute-line" id="compute-line"><div class="line"></div></div>
-<div class="lines">${lines.map((t, i) => `<div class="line${i === 0 ? ' line-title' : ''}${i === cursor ? ' cursor-line' : ''}" id="Lid${i}"><span class="text">${t ? charSpans(t) : '<br class="empty-char-index">'}</span></div>`).join('')}</div>
+<div class="lines">${lines.map((t, i) => `<div class="line${i === 0 ? ' line-title' : ''}${i === cursor ? ' cursor-line' : ''}" id="L${idOf(i)}"><span class="text">${lineHtml?.[i] ?? (t ? charSpans(t) : '<br class="empty-char-index">')}</span></div>`).join('')}</div>
 </div></div></div>
 <textarea id="text-input"></textarea><div class="cursor"></div>
 </body></html>`;
-  const dom = new JSDOM(html, { runScripts: 'outside-only', pretendToBeVisual: true, url: `https://scrapbox.io/${project}/page` });
+  const dom = new JSDOM(html, { runScripts: 'outside-only', pretendToBeVisual: true, url: `https://scrapbox.io/${project}/page${hash}` });
   const w = dom.window;
   const listeners = {};
   const keylog = [];
@@ -24,7 +25,7 @@ export function makeEnv({ lines = ['テスト', '', 'hello world foo', 'second l
   w.cosense = cosenseOverride ? cosenseOverride(w) : {
     Layout: 'page',
     Project: { name: project },
-    Page: { title: lines[0], lines: lines.map((t, i) => ({ id: 'id' + i, text: t })), show() {} },
+    Page: { title: lines[0], lines: lines.map((t, i) => ({ id: idOf(i), text: t })), show() {} },
     on(ev, fn) { (listeners[ev] ||= []).push(fn); },
     off(ev, fn) { listeners[ev] = (listeners[ev] || []).filter(f => f !== fn); },
   };
