@@ -2213,6 +2213,14 @@ body[data-vim-numbers] .app:not(.presentation) .editor .lines>.line.cursor-line:
       }, 50);
     }, 300);
   }
+  function previewImageFor(el) {
+    for (const s of [el.nextElementSibling, el.previousElementSibling]) {
+      if (!s) continue;
+      const img = s.matches("img") ? s : s.querySelector("img");
+      if (img) return img;
+    }
+    return el.closest(".line")?.querySelector(".modal-image img, img.image") || null;
+  }
   function followLink() {
     const cl = edCurLine();
     const cursor = $(".cursor");
@@ -2244,9 +2252,9 @@ body[data-vim-numbers] .app:not(.presentation) .editor .lines>.line.cursor-line:
     }
     const imageSpan = target.closest(".image");
     if (imageSpan) {
-      const prev = imageSpan.previousElementSibling;
-      if (prev) {
-        (prev.querySelector("img") || prev).click();
+      const img = previewImageFor(imageSpan);
+      if (img) {
+        img.click();
         flash("Image preview");
         return;
       }
@@ -3232,7 +3240,12 @@ ${vars}
     if (!modal) return false;
     if (e.key === "q" || e.key === "Escape") {
       block2(e);
-      ($(".modal-backdrop.in") || modal).click();
+      if (modal.tagName === "DIALOG") {
+        modal.dispatchEvent(new Event("cancel", { cancelable: true }));
+        setTimeout(() => {
+          if (modal.isConnected && modal.open) modal.close();
+        }, 50);
+      } else ($(".modal-backdrop.in") || modal).click();
       setTimeout(() => {
         focus();
         setMode("normal");

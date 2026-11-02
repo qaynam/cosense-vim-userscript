@@ -34,6 +34,18 @@ function restoreNav() {
   }, 300);
 }
 
+// ---- image preview ----
+// The preview <img> sits next to the line's chars: before them in older cosense, after them
+// (span.modal-image) in newer versions. Look on both sides, then anywhere on the line.
+function previewImageFor(el) {
+  for (const s of [el.nextElementSibling, el.previousElementSibling]) {
+    if (!s) continue;
+    const img = s.matches('img') ? s : s.querySelector('img');
+    if (img) return img;
+  }
+  return el.closest('.line')?.querySelector('.modal-image img, img.image') || null;
+}
+
 export function followLink() {
   const cl = edCurLine(); const cursor = $('.cursor');
   if (!cl || !cursor) { flash('No link'); return; }
@@ -50,8 +62,8 @@ export function followLink() {
 
   const imageSpan = target.closest('.image');
   if (imageSpan) {
-    const prev = imageSpan.previousElementSibling;
-    if (prev) { (prev.querySelector('img') || prev).click(); flash('Image preview'); return; }
+    const img = previewImageFor(imageSpan);
+    if (img) { img.click(); flash('Image preview'); return; }
   }
   const anchor = target.closest('a[href]');
   if (anchor) {

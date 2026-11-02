@@ -108,7 +108,11 @@ function handleImageModal(e) {
   if (!modal) return false;
   if (e.key === 'q' || e.key === 'Escape') {
     block(e);
-    ($('.modal-backdrop.in') || modal).click();
+    if (modal.tagName === 'DIALOG') {
+      // newer cosense: a native <dialog>; it closes on "cancel" (what Esc fires natively)
+      modal.dispatchEvent(new Event('cancel', { cancelable: true }));
+      setTimeout(() => { if (modal.isConnected && modal.open) modal.close(); }, 50);
+    } else ($('.modal-backdrop.in') || modal).click();
     setTimeout(() => { focus(); setMode('normal'); }, 100);
   }
   return true;   // all other keys are ignored while the preview is open
